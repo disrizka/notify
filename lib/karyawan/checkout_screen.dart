@@ -10,8 +10,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:notify/api/api.dart';
-import 'package:notify/api/api.dart' as Api;
+import 'package:sapa_jonusa/api/api.dart' as Api;
+
 
 // ─── Color Palette ─────────────────────────────────────────────────────────
 const kPrimaryBlue = Color(0xFF1565C0);

@@ -3,14 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:notify/api/api.dart' as Api;
-import 'package:notify/auth/login_screen.dart';
-import 'package:notify/karyawan/chat/chat_screen.dart';
-import 'package:notify/karyawan/checkin_screen.dart';
-import 'package:notify/karyawan/checkout_screen.dart';
-import 'package:notify/karyawan/cuti_screen.dart';
-import 'package:notify/karyawan/profile_screen.dart';
-import 'package:notify/karyawan/sakit_screen.dart';
+import 'package:sapa_jonusa/api/api.dart' as Api;
+import 'package:sapa_jonusa/auth/login_screen.dart';
+import 'package:sapa_jonusa/karyawan/attedance_history_screen.dart';
+import 'package:sapa_jonusa/karyawan/chat/chat_screen.dart';
+import 'package:sapa_jonusa/karyawan/checkin_screen.dart';
+import 'package:sapa_jonusa/karyawan/checkout_screen.dart';
+import 'package:sapa_jonusa/karyawan/cuti_screen.dart';
+import 'package:sapa_jonusa/karyawan/profile_screen.dart';
+import 'package:sapa_jonusa/karyawan/sakit_screen.dart';
 
 // ─── Warna utama tema biru ────────────────────────────────────────────────────
 const _kPrimary = Color(0xFF1565C0);
@@ -1143,6 +1144,13 @@ class _MenuGrid extends StatelessWidget {
       bg: Color.fromARGB(255, 221, 255, 249),
       iconColor: Color.fromARGB(255, 0, 100, 100),
       route: ChatScreen(),
+    ),
+    _MenuDef(
+      icon: Icons.history_rounded,
+      label: 'Riwayat',
+      bg: Color(0xFFE8EAF6),
+      iconColor: Color(0xFF3949AB),
+      route: AttendanceHistoryScreen(),
     ),
   ];
 

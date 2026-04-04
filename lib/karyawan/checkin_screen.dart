@@ -8,7 +8,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:notify/api/api.dart' as Api;
+import 'package:sapa_jonusa/api/api.dart' as Api;
 
 // ─── Color Palette ─────────────────────────────────────────────────────────
 const kPrimaryBlue = Color(0xFF1565C0);
@@ -360,12 +360,27 @@ class _CheckinScreenState extends State<CheckinScreen>
   }
 
   Widget _buildMapBody(bool canSubmit) {
+    // TAMBAHKAN PENGECEKAN INI:
+    if (_currentPosition == null) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.location_off, color: Colors.red, size: 50),
+            SizedBox(height: 10),
+            Text("Gagal mendapatkan koordinat lokasi."),
+          ],
+        ),
+      );
+    }
+
     return Stack(
       children: [
         GoogleMap(
           myLocationEnabled: true,
           initialCameraPosition: CameraPosition(
-            target: _currentPosition!,
+            target:
+                _currentPosition!, // Sekarang aman karena sudah dicek di atas
             zoom: 17,
           ),
           onMapCreated: (c) => _controller.complete(c),

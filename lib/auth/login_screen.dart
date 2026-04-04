@@ -3,10 +3,9 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:notify/admin/admin_screen.dart';
-import 'package:notify/api/api.dart';
-import 'package:notify/karyawan/karyawan_screen.dart';
-
+import 'package:sapa_jonusa/admin/admin_screen.dart';
+import 'package:sapa_jonusa/api/api.dart';
+import 'package:sapa_jonusa/karyawan/karyawan_screen.dart';
 
 // ─── Warna tema biru (konsisten dengan home screen) ──────────────────────────
 const _kPrimary = Color(0xFF1565C0);
@@ -100,15 +99,16 @@ class _LoginScreenState extends State<LoginScreen>
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
 
-        // 1. SIMPAN TOKEN
+        // SESUDAH — tambahkan simpan role:
         await _storage.write(key: 'auth_token', value: data['access_token']);
-
-        // 2. SIMPAN USER ID (WAJIB untuk fitur chat kanan-kiri)
-        // Pastikan backend kamu mengirim data['user']['id']
         await _storage.write(
           key: 'user_id',
           value: data['user']['id'].toString(),
         );
+        await _storage.write(
+          key: 'user_role',
+          value: data['user']['role'].toString(),
+        ); // ← tambahan ini
 
         final role = data['user']['role'].toString().trim().toLowerCase();
 

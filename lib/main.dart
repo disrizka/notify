@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:notify/auth/login_screen.dart';
+import 'package:sapa_jonusa/auth/splash_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -12,13 +12,14 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Notify',
+      title: 'SAPA Jonusa',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color.fromARGB(255, 31, 91, 255),
         ),
       ),
-      home: const LoginScreen(),
+      home: SplashScreen(),
     );
   }
 }

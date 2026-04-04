@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
-import 'package:notify/api/api.dart' as Api;
-import 'package:notify/auth/login_screen.dart';
+import 'package:sapa_jonusa/api/api.dart' as Api;
+import 'package:sapa_jonusa/auth/login_screen.dart';
+
 
 // ─── Color Palette (sama dengan checkin/checkout) ───────────────────────────
 const _kPrimary   = Color(0xFF1565C0);

@@ -7,7 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:notify/api/api.dart' as Api;
+import 'package:sapa_jonusa/api/api.dart' as Api;
 
 class AdminChatScreen extends StatefulWidget {
   const AdminChatScreen({super.key});
