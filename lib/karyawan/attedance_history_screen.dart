@@ -4,7 +4,6 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:sapa_jonusa/api/api.dart' as Api;
 
-// ─── Warna (sama persis dengan home screen) ───────────────────────────────────
 const _kPrimary = Color(0xFF1565C0);
 const _kPrimaryMd = Color(0xFF1976D2);
 const _kPrimaryLt = Color(0xFF42A5F5);
@@ -16,14 +15,15 @@ const _kSub = Color(0xFF8A99B5);
 const _kGreen = Color(0xFF00897B);
 const _kAmber = Color(0xFFF57C00);
 const _kRed = Color(0xFFE53935);
+const _kGray = Color(0xFF9CA3AF);
 
-// ─── Model ────────────────────────────────────────────────────────────────────
 class AttendanceRecord {
   final int id;
   final String date;
   final String? checkIn;
   final String? checkOut;
   final String isApproved;
+  final String isApprovedOut;
   final String? notes;
   final String? notesOut;
 
@@ -33,6 +33,7 @@ class AttendanceRecord {
     this.checkIn,
     this.checkOut,
     required this.isApproved,
+    required this.isApprovedOut,
     this.notes,
     this.notesOut,
   });
@@ -44,12 +45,19 @@ class AttendanceRecord {
       checkIn: json['check_in'],
       checkOut: json['check_out'],
       isApproved: json['is_approved'] ?? 'pending',
+      isApprovedOut: json['is_approved_out'] ?? 'pending',
       notes: json['notes'],
       notesOut: json['notes_out'],
     );
   }
 
-  /// Durasi kerja dalam format "Xj Ym"
+  bool get isFullyPresent =>
+      checkOut != null &&
+      isApproved == 'approved' &&
+      isApprovedOut == 'approved';
+
+  bool get isBelumCheckOut => isApproved == 'approved' && checkOut == null;
+
   String get workDuration {
     if (checkIn == null || checkOut == null) return '-';
     try {
@@ -94,8 +102,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
   bool _isLoading = true;
   String? _error;
 
-  // Filter
-  String _selectedStatus = 'semua'; // semua | pending | approved | rejected
+  String _selectedStatus = 'semua';
   int _selectedMonth = DateTime.now().month;
   int _selectedYear = DateTime.now().year;
 
@@ -134,14 +141,13 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
     super.dispose();
   }
 
-  // ── API call ──────────────────────────────────────────────────────────────
+  // ── API ───────────────────────────────────────────────────────────────────
   Future<void> _fetchHistory() async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
     _animController.reset();
-
     try {
       final token = await _storage.read(key: 'auth_token');
       final uri = Uri.parse(
@@ -155,7 +161,6 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
           'Accept': 'application/json',
         },
       );
-
       if (response.statusCode == 200) {
         final List data = jsonDecode(response.body);
         _allRecords = data.map((e) => AttendanceRecord.fromJson(e)).toList();
@@ -164,7 +169,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
       } else {
         setState(() => _error = 'Gagal memuat data (${response.statusCode})');
       }
-    } catch (e) {
+    } catch (_) {
       setState(() => _error = 'Tidak dapat terhubung ke server');
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -173,24 +178,28 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
 
   void _applyFilter() {
     setState(() {
-      if (_selectedStatus == 'semua') {
-        _filtered = List.from(_allRecords);
-      } else {
-        _filtered =
-            _allRecords.where((r) => r.isApproved == _selectedStatus).toList();
-      }
+      _filtered =
+          _selectedStatus == 'semua'
+              ? List.from(_allRecords)
+              : _allRecords
+                  .where((r) => r.isApproved == _selectedStatus)
+                  .toList();
     });
   }
 
-  // ── Statistik bulan ini ───────────────────────────────────────────────────
   int get _totalHadir =>
-      _allRecords.where((r) => r.isApproved == 'approved').length;
+      _allRecords
+          .where((r) => r.isApproved == 'approved' && r.checkOut != null)
+          .length;
+  int get _totalBelumOut =>
+      _allRecords
+          .where((r) => r.isApproved == 'approved' && r.checkOut == null)
+          .length;
   int get _totalPending =>
       _allRecords.where((r) => r.isApproved == 'pending').length;
   int get _totalDitolak =>
       _allRecords.where((r) => r.isApproved == 'rejected').length;
 
-  // ── Picker bulan/tahun ────────────────────────────────────────────────────
   void _pickMonthYear() {
     int tempMonth = _selectedMonth;
     int tempYear = _selectedYear;
@@ -200,133 +209,131 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
       backgroundColor: Colors.transparent,
       builder:
           (ctx) => StatefulBuilder(
-            builder: (ctx, setModalState) {
-              return Container(
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-                ),
-                padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 4,
-                      margin: const EdgeInsets.only(bottom: 20),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade200,
-                        borderRadius: BorderRadius.circular(2),
+            builder:
+                (ctx, setModalState) => Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(28),
+                    ),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 20),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
                       ),
-                    ),
-                    const Text(
-                      'Pilih Bulan & Tahun',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: _kText,
+                      const Text(
+                        'Pilih Bulan & Tahun',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: _kText,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    // Year selector
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _YearButton(
-                          icon: Icons.chevron_left_rounded,
-                          onTap: () => setModalState(() => tempYear--),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: Text(
-                            '$tempYear',
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              color: _kPrimary,
-                            ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _YearButton(
+                            icon: Icons.chevron_left_rounded,
+                            onTap: () => setModalState(() => tempYear--),
                           ),
-                        ),
-                        _YearButton(
-                          icon: Icons.chevron_right_rounded,
-                          onTap: () => setModalState(() => tempYear++),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    // Month grid
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 4,
-                            mainAxisSpacing: 8,
-                            crossAxisSpacing: 8,
-                            childAspectRatio: 1.8,
-                          ),
-                      itemCount: 12,
-                      itemBuilder: (_, i) {
-                        final selected = i + 1 == tempMonth;
-                        return GestureDetector(
-                          onTap: () => setModalState(() => tempMonth = i + 1),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 150),
-                            decoration: BoxDecoration(
-                              color:
-                                  selected
-                                      ? _kPrimary
-                                      : _kPrimary.withOpacity(0.06),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Center(
-                              child: Text(
-                                _months[i].substring(0, 3),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: selected ? Colors.white : _kText,
-                                ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Text(
+                              '$tempYear',
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                color: _kPrimary,
                               ),
                             ),
                           ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _kPrimary,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                          _YearButton(
+                            icon: Icons.chevron_right_rounded,
+                            onTap: () => setModalState(() => tempYear++),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 4,
+                              mainAxisSpacing: 8,
+                              crossAxisSpacing: 8,
+                              childAspectRatio: 1.8,
+                            ),
+                        itemCount: 12,
+                        itemBuilder: (_, i) {
+                          final selected = i + 1 == tempMonth;
+                          return GestureDetector(
+                            onTap: () => setModalState(() => tempMonth = i + 1),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              decoration: BoxDecoration(
+                                color:
+                                    selected
+                                        ? _kPrimary
+                                        : _kPrimary.withOpacity(0.06),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  _months[i].substring(0, 3),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: selected ? Colors.white : _kText,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _kPrimary,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            setState(() {
+                              _selectedMonth = tempMonth;
+                              _selectedYear = tempYear;
+                            });
+                            _fetchHistory();
+                          },
+                          child: const Text(
+                            'Tampilkan',
+                            style: TextStyle(fontWeight: FontWeight.w700),
                           ),
                         ),
-                        onPressed: () {
-                          Navigator.pop(ctx);
-                          setState(() {
-                            _selectedMonth = tempMonth;
-                            _selectedYear = tempYear;
-                          });
-                          _fetchHistory();
-                        },
-                        child: const Text(
-                          'Tampilkan',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              );
-            },
           ),
     );
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -352,7 +359,6 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
     );
   }
 
-  // ── App Bar ───────────────────────────────────────────────────────────────
   Widget _buildAppBar() {
     return SliverAppBar(
       expandedHeight: 130,
@@ -366,7 +372,6 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
       actions: [
         IconButton(
           icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-          tooltip: 'Refresh',
           onPressed: _fetchHistory,
         ),
       ],
@@ -398,7 +403,6 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
                         color: Colors.white,
                         fontSize: 20,
                         fontWeight: FontWeight.w900,
-                        letterSpacing: 0.3,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -424,9 +428,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: Colors.white.withOpacity(0.3)),
                   ),
-                  child: Row(
+                  child: const Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: const [
+                    children: [
                       Icon(
                         Icons.calendar_month_rounded,
                         color: Colors.white,
@@ -452,7 +456,6 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
     );
   }
 
-  // ── Stats Row ─────────────────────────────────────────────────────────────
   Widget _buildStatsRow() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -466,7 +469,16 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
               icon: Icons.check_circle_rounded,
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _StatCard(
+              label: 'Blm Checkout',
+              value: _totalBelumOut,
+              color: _kPrimary,
+              icon: Icons.exit_to_app_rounded,
+            ),
+          ),
+          const SizedBox(width: 8),
           Expanded(
             child: _StatCard(
               label: 'Pending',
@@ -475,7 +487,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
               icon: Icons.hourglass_top_rounded,
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
             child: _StatCard(
               label: 'Ditolak',
@@ -489,7 +501,6 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
     );
   }
 
-  // ── Filter Row ────────────────────────────────────────────────────────────
   Widget _buildFilterRow() {
     const statusList = [
       ('semua', 'Semua'),
@@ -497,7 +508,6 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
       ('pending', 'Pending'),
       ('rejected', 'Ditolak'),
     ];
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
       child: SingleChildScrollView(
@@ -553,7 +563,6 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
     );
   }
 
-  // ── List ──────────────────────────────────────────────────────────────────
   Widget _buildList() {
     return SliverList(
       delegate: SliverChildBuilderDelegate((_, i) {
@@ -576,13 +585,27 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen>
   }
 }
 
-// ─── Attendance Card ──────────────────────────────────────────────────────────
 class _AttendanceCard extends StatelessWidget {
   final AttendanceRecord record;
   const _AttendanceCard({required this.record});
 
-  Color get _statusColor {
-    switch (record.isApproved) {
+  Color get _statusInColor => _statusColor(record.isApproved);
+  IconData get _statusInIcon => _statusIcon(record.isApproved);
+  String get _statusInLabel => _statusLabel(record.isApproved);
+
+  Color get _statusOutColor =>
+      record.checkOut == null ? _kGray : _statusColor(record.isApprovedOut);
+  IconData get _statusOutIcon =>
+      record.checkOut == null
+          ? Icons.schedule_rounded
+          : _statusIcon(record.isApprovedOut);
+  String get _statusOutLabel =>
+      record.checkOut == null
+          ? 'Belum Checkout'
+          : _statusLabel(record.isApprovedOut);
+
+  static Color _statusColor(String s) {
+    switch (s) {
       case 'approved':
         return _kGreen;
       case 'rejected':
@@ -592,8 +615,8 @@ class _AttendanceCard extends StatelessWidget {
     }
   }
 
-  IconData get _statusIcon {
-    switch (record.isApproved) {
+  static IconData _statusIcon(String s) {
+    switch (s) {
       case 'approved':
         return Icons.check_circle_rounded;
       case 'rejected':
@@ -603,8 +626,8 @@ class _AttendanceCard extends StatelessWidget {
     }
   }
 
-  String get _statusLabel {
-    switch (record.isApproved) {
+  static String _statusLabel(String s) {
+    switch (s) {
       case 'approved':
         return 'Disetujui';
       case 'rejected':
@@ -641,8 +664,9 @@ class _AttendanceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 24),
       decoration: BoxDecoration(
-        color: _kCard,
+        color: const Color.fromARGB(255, 255, 255, 255),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -654,16 +678,15 @@ class _AttendanceCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // ── Header ────────────────────────────────────────────────────────
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: _statusColor.withOpacity(0.05),
+              color: _kPrimary.withOpacity(0.04),
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(20),
               ),
               border: Border(
-                bottom: BorderSide(color: _statusColor.withOpacity(0.12)),
+                bottom: BorderSide(color: _kPrimary.withOpacity(0.08)),
               ),
             ),
             child: Row(
@@ -686,7 +709,7 @@ class _AttendanceCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     _formatDate(record.date),
@@ -697,43 +720,14 @@ class _AttendanceCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Status chip
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _statusColor.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: _statusColor.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(_statusIcon, size: 11, color: _statusColor),
-                      const SizedBox(width: 4),
-                      Text(
-                        _statusLabel,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: _statusColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ],
             ),
           ),
 
-          // ── Body ──────────────────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: Row(
               children: [
-                // Check-in
                 Expanded(
                   child: _TimeInfo(
                     icon: Icons.login_rounded,
@@ -743,7 +737,6 @@ class _AttendanceCard extends StatelessWidget {
                     hasValue: record.checkIn != null,
                   ),
                 ),
-                // Divider
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Column(
@@ -777,7 +770,6 @@ class _AttendanceCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Check-out
                 Expanded(
                   child: _TimeInfo(
                     icon: Icons.logout_rounded,
@@ -792,39 +784,169 @@ class _AttendanceCard extends StatelessWidget {
             ),
           ),
 
-          // ── Notes (jika ada) ──────────────────────────────────────────────
-          if (record.notes != null && record.notes!.isNotEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              decoration: BoxDecoration(
-                color: _kBg,
-                borderRadius: const BorderRadius.vertical(
-                  bottom: Radius.circular(20),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.notes_rounded, size: 12, color: _kSub),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      record.notes!,
-                      style: const TextStyle(fontSize: 11, color: _kSub),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Row(
+              children: [
+                // Status IN
+                Expanded(
+                  child: _StatusChip(
+                    label: 'Status IN',
+                    value: _statusInLabel,
+                    color: _statusInColor,
+                    icon: _statusInIcon,
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                // Status OUT
+                Expanded(
+                  child: _StatusChip(
+                    label: 'Status OUT',
+                    value: _statusOutLabel,
+                    color: _statusOutColor,
+                    icon: _statusOutIcon,
+                  ),
+                ),
+              ],
             ),
+          ),
+
+          if (record.notes != null && record.notes!.isNotEmpty)
+            _NotesRow(
+              icon: Icons.login_rounded,
+              iconColor: _kPrimary,
+              label: 'Ket. Masuk',
+              text: record.notes!,
+              isLast: record.notesOut == null || record.notesOut!.isEmpty,
+            ),
+
+          if (record.notesOut != null && record.notesOut!.isNotEmpty)
+            _NotesRow(
+              icon: Icons.logout_rounded,
+              iconColor: _kGreen,
+              label: 'Ket. Pulang',
+              text: record.notesOut!,
+              isLast: true,
+            ),
+
+          if ((record.notes == null || record.notes!.isEmpty) &&
+              (record.notesOut == null || record.notesOut!.isEmpty))
+            const SizedBox(height: 14),
         ],
       ),
     );
   }
 }
 
-// ─── Time Info ────────────────────────────────────────────────────────────────
+class _StatusChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  final IconData icon;
+
+  const _StatusChip({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+              color: _kSub,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 11, color: color),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NotesRow extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final String text;
+  final bool isLast;
+
+  const _NotesRow({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.text,
+    required this.isLast,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: _kBg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 12, color: iconColor),
+          const SizedBox(width: 6),
+          Text(
+            '$label: ',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: iconColor,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 11, color: _kSub),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TimeInfo extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -876,8 +998,8 @@ class _TimeInfo extends StatelessWidget {
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w900,
-            color: hasValue ? _kText : _kSub,
             letterSpacing: 0.5,
+            color: hasValue ? _kText : _kSub,
           ),
         ),
       ],
@@ -885,7 +1007,6 @@ class _TimeInfo extends StatelessWidget {
   }
 }
 
-// ─── Stat Card ────────────────────────────────────────────────────────────────
 class _StatCard extends StatelessWidget {
   final String label;
   final int value;
@@ -902,10 +1023,10 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
             color: color.withOpacity(0.1),
@@ -918,18 +1039,18 @@ class _StatCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(7),
+            padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
               color: color.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, size: 14, color: color),
+            child: Icon(icon, size: 13, color: color),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             '$value',
             style: TextStyle(
-              fontSize: 22,
+              fontSize: 20,
               fontWeight: FontWeight.w900,
               color: color,
             ),
@@ -937,7 +1058,7 @@ class _StatCard extends StatelessWidget {
           Text(
             label,
             style: const TextStyle(
-              fontSize: 11,
+              fontSize: 10,
               color: _kSub,
               fontWeight: FontWeight.w500,
             ),
@@ -948,11 +1069,9 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-// ─── Year Button ─────────────────────────────────────────────────────────────
 class _YearButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
-
   const _YearButton({required this.icon, required this.onTap});
 
   @override
@@ -972,127 +1091,117 @@ class _YearButton extends StatelessWidget {
   }
 }
 
-// ─── States ───────────────────────────────────────────────────────────────────
 class _LoadingState extends StatelessWidget {
   const _LoadingState();
-
   @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          CircularProgressIndicator(color: _kPrimary, strokeWidth: 3),
-          SizedBox(height: 14),
-          Text(
-            'Memuat riwayat absensi...',
-            style: TextStyle(color: _kSub, fontSize: 13),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CircularProgressIndicator(color: _kPrimary, strokeWidth: 3),
+        SizedBox(height: 14),
+        Text(
+          'Memuat riwayat absensi...',
+          style: TextStyle(color: _kSub, fontSize: 13),
+        ),
+      ],
+    ),
+  );
 }
 
 class _ErrorState extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
-
   const _ErrorState({required this.message, required this.onRetry});
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: _kRed.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.wifi_off_rounded, size: 36, color: _kRed),
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: _kRed.withOpacity(0.1),
+              shape: BoxShape.circle,
             ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              style: const TextStyle(
-                color: _kText,
-                fontWeight: FontWeight.w700,
-                fontSize: 15,
-              ),
-              textAlign: TextAlign.center,
+            child: const Icon(Icons.wifi_off_rounded, size: 36, color: _kRed),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            message,
+            style: const TextStyle(
+              color: _kText,
+              fontWeight: FontWeight.w700,
+              fontSize: 15,
             ),
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: onRetry,
-              style: FilledButton.styleFrom(
-                backgroundColor: _kPrimary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: onRetry,
+            style: FilledButton.styleFrom(
+              backgroundColor: _kPrimary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Coba Lagi'),
             ),
-          ],
-        ),
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Coba Lagi'),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
-
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    _kPrimary.withOpacity(0.1),
-                    _kPrimaryLt.withOpacity(0.08),
-                  ],
-                ),
-                shape: BoxShape.circle,
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  _kPrimary.withOpacity(0.1),
+                  _kPrimaryLt.withOpacity(0.08),
+                ],
               ),
-              child: const Icon(
-                Icons.event_busy_rounded,
-                size: 40,
-                color: _kPrimary,
-              ),
+              shape: BoxShape.circle,
             ),
-            const SizedBox(height: 16),
-            const Text(
-              'Tidak ada data absensi',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: _kText,
-              ),
+            child: const Icon(
+              Icons.event_busy_rounded,
+              size: 40,
+              color: _kPrimary,
             ),
-            const SizedBox(height: 6),
-            const Text(
-              'Belum ada catatan absensi\npada periode ini',
-              style: TextStyle(fontSize: 13, color: _kSub),
-              textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Tidak ada data absensi',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: _kText,
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Belum ada catatan absensi\npada periode ini',
+            style: TextStyle(fontSize: 13, color: _kSub),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }

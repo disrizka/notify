@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +13,9 @@ import 'package:sapa_jonusa/karyawan/checkout_screen.dart';
 import 'package:sapa_jonusa/karyawan/cuti_screen.dart';
 import 'package:sapa_jonusa/karyawan/profile_screen.dart';
 import 'package:sapa_jonusa/karyawan/sakit_screen.dart';
+import "notification_screen.dart";
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:sapa_jonusa/main.dart';
 
 // ─── Warna utama tema biru ────────────────────────────────────────────────────
 const _kPrimary = Color(0xFF1565C0);
@@ -39,10 +43,93 @@ class _KaryawanHomeScreenState extends State<KaryawanHomeScreen>
   final _storage = const FlutterSecureStorage();
   int _selectedIndex = 0;
   bool _isLoggingOut = false;
+  int _unreadCount = 0; // Tambahkan ini
+  Timer? _notifTimer;
+  int get unreadCount => _unreadCount;
+  int _lastNotifCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchNotifications();
+    // Cek notifikasi setiap 10 detik agar tidak berat
+    _notifTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (mounted) _fetchNotifications();
+    });
+  }
+
+  @override
+  void dispose() {
+    _notifTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _fetchNotifications() async {
+    try {
+      final token = await _storage.read(key: 'auth_token');
+      final res = await http.get(
+        Uri.parse(
+          '${Api.baseUrl}/api/notifications/count',
+        ), // Pastikan route ini ada di api.php
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        int newCount = data['unread_count'] ?? 0;
+
+        // Ambil pesan dan judul dari API
+        String title = data['latest_title'] ?? "Sapa Jonusa";
+        String message = data['latest_message'] ?? "Ada pesan baru untukmu";
+
+        // Popup muncul HANYA jika ada penambahan jumlah notif
+        if (newCount > _lastNotifCount) {
+          _showNotificationPopup(title, message);
+        }
+
+        if (mounted) {
+          setState(() {
+            _unreadCount = newCount;
+            _lastNotifCount = newCount;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error Fetch: $e');
+    }
+  }
+
+  Future<void> _showNotificationPopup(String title, String body) async {
+    // Pakai ID 'sapa_jonusa_high_v2' agar Android membuat channel baru yang FRESH
+    const AndroidNotificationDetails androidPlatformChannelSpecifics =
+        AndroidNotificationDetails(
+          'sapa_jonusa_high_v2',
+          'Notifikasi Penting',
+          importance: Importance.max,
+          priority: Priority.high,
+          ticker: 'ticker',
+          icon: '@mipmap/ic_launcher', // Memastikan ikon muncul
+          channelShowBadge: true,
+        );
+
+    const NotificationDetails platformChannelSpecifics = NotificationDetails(
+      android: androidPlatformChannelSpecifics,
+    );
+
+    await flutterLocalNotificationsPlugin.show(
+      DateTime.now().millisecond, // ID unik biar gak numpuk
+      title,
+      body,
+      platformChannelSpecifics,
+    );
+  }
 
   // ── Bottom Nav Screens ───────────────────────────────────────────────────
   late final List<Widget> _screens = [
-    const _HomeTab(),
+    _HomeTab(),
     const _PlaceholderTab(
       icon: Icons.access_time_filled_rounded,
       label: 'Timeline',
@@ -258,7 +345,22 @@ class _KaryawanHomeScreenState extends State<KaryawanHomeScreen>
     return Scaffold(
       backgroundColor: _kBg,
       extendBodyBehindAppBar: true,
-      body: IndexedStack(index: _selectedIndex, children: _screens),
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: [
+          // Halaman 0
+          _HomeTab(key: ValueKey(_unreadCount)),
+
+          // Halaman 1 (Ganti sesuai nama file timeline kamu, misal TimelineScreen)
+          // const AttendanceScreen(),
+          const Center(child: Text("Halaman Perusahaan")),
+          // Halaman 2 (Ganti sesuai nama file perusahaan kamu)
+          const Center(child: Text("Halaman Perusahaan")),
+
+          // Halaman 4
+          const ProfileScreen(),
+        ],
+      ),
       bottomNavigationBar: _buildBottomNav(),
       floatingActionButton: _buildFAB(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
@@ -390,21 +492,31 @@ class _KaryawanHomeScreenState extends State<KaryawanHomeScreen>
 
 // ─── Home Tab ────────────────────────────────────────────────────────────────
 class _HomeTab extends StatelessWidget {
-  const _HomeTab();
+  const _HomeTab({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // Ambil state untuk dapetin jumlah notif dan fungsi fetch
+    final mainState =
+        context.findAncestorStateOfType<_KaryawanHomeScreenState>();
+    final count = mainState?.unreadCount ?? 0;
+    debugPrint("UI Refresh: HomeTab menggambar ulang dengan count = $count");
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _HeaderSection(),
+          _HeaderSection(
+            unreadCount: count,
+            onRefresh: () {
+              // Menjalankan fungsi fetch di class utama
+              mainState?._fetchNotifications();
+            },
+          ),
           const SizedBox(height: 16),
           const _SwipeableInfoCards(),
           const SizedBox(height: 18),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
-            // Gunakan Key agar widget rebuild setiap kali HomeTab ditampilkan ulang
             child: _PresenceCard(key: ValueKey(DateTime.now().day)),
           ),
           const SizedBox(height: 18),
@@ -419,10 +531,19 @@ class _HomeTab extends StatelessWidget {
   }
 }
 
-// ─── Header ──────────────────────────────────────────────────────────────────
 class _HeaderSection extends StatelessWidget {
+  final int unreadCount;
+  final VoidCallback onRefresh; // Ini kunci untuk refresh
+
+  _HeaderSection({
+    super.key,
+    required this.unreadCount,
+    required this.onRefresh,
+  });
+
   @override
   Widget build(BuildContext context) {
+    // Logika Tanggal
     final now = DateTime.now();
     final days = [
       'Senin',
@@ -447,13 +568,13 @@ class _HeaderSection extends StatelessWidget {
       'Nov',
       'Des',
     ];
-    final dayStr = days[now.weekday - 1];
-    final dateStr = '$dayStr, ${now.day} ${months[now.month - 1]} ${now.year}';
+    final dateStr =
+        '${days[now.weekday - 1]}, ${now.day} ${months[now.month - 1]} ${now.year}';
 
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [_kAccent, _kPrimary, _kPrimaryMd],
+          colors: [Color(0xFF42A5F5), Color(0xFF1565C0), Color(0xFF0D47A1)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -465,9 +586,10 @@ class _HeaderSection extends StatelessWidget {
         22,
         32,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
+          // SISI KIRI: PROFIL
           Row(
             children: [
               Container(
@@ -488,62 +610,75 @@ class _HeaderSection extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Selamat datang ',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.8),
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      dateStr,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Stack(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.18),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.2),
-                        width: 1,
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.notifications_none_rounded,
-                      color: Colors.white,
-                      size: 22,
+                  Text(
+                    'Selamat datang',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.8),
+                      fontSize: 13,
                     ),
                   ),
+                  Text(
+                    dateStr,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+
+          // SISI KANAN: IKON LONCENG
+          GestureDetector(
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const NotificationScreen(),
+                ),
+              );
+              // Panggil refresh setelah balik dari halaman notif
+              onRefresh();
+            },
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.18),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.notifications_none_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+                if (unreadCount > 0)
                   Positioned(
-                    right: 2,
-                    top: 2,
+                    right: -2,
+                    top: -2,
                     child: Container(
-                      width: 18,
-                      height: 18,
+                      padding: const EdgeInsets.all(4),
                       decoration: const BoxDecoration(
                         color: Color(0xFFFF1744),
                         shape: BoxShape.circle,
                       ),
-                      child: const Center(
+                      constraints: const BoxConstraints(
+                        minWidth: 18,
+                        minHeight: 18,
+                      ),
+                      child: Center(
                         child: Text(
-                          '3',
-                          style: TextStyle(
+                          '$unreadCount',
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
@@ -552,9 +687,8 @@ class _HeaderSection extends StatelessWidget {
                       ),
                     ),
                   ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
