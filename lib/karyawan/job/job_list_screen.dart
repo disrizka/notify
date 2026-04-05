@@ -1,10 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:sapa_jonusa/service/job_service.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'job_progress_screen.dart';
 
 const _kPrimary = Color(0xFF1565C0);
-const _kAccent = Color(0xFF0D47A1);
-const _kPrimaryMd = Color(0xFF1976D2);
 const _kBg = Color(0xFFF0F4FF);
 const _kText = Color(0xFF0D1B3E);
 const _kSub = Color(0xFF8A99B5);
@@ -22,25 +22,55 @@ class JobListScreen extends StatefulWidget {
 class _JobListScreenState extends State<JobListScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tab;
+  final _storage = const FlutterSecureStorage();
+
   List<Job> _active = [];
   List<Job> _history = [];
   bool _loading = true;
   String? _error;
+  int? _currentUserId; // Untuk simpan ID user yang login
 
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 2, vsync: this);
-    _load();
+    _initData();
   }
 
-  @override
-  void dispose() {
-    _tab.dispose();
-    super.dispose();
+  Future<void> _initData() async {
+    await _loadUserData();
+    await _load();
+  }
+
+  // Ambil data user yang sedang login dari storage
+  Future<void> _loadUserData() async {
+    try {
+      // 1. Cek dulu apakah ada key 'user_data' (biasanya dari login_screen kamu)
+      final userStr = await _storage.read(key: 'user_data');
+
+      if (userStr != null) {
+        final userData = jsonDecode(userStr);
+        setState(() {
+          // Pastikan ambil field 'id'
+          _currentUserId = userData['id'];
+        });
+        print("DEBUG: Berhasil load ID User -> $_currentUserId");
+      } else {
+        // 2. Jika 'user_data' kosong, coba cek key 'user_id' langsung
+        final userIdStr = await _storage.read(key: 'user_id');
+        if (userIdStr != null) {
+          setState(() {
+            _currentUserId = int.tryParse(userIdStr);
+          });
+        }
+      }
+    } catch (e) {
+      print("DEBUG: Gagal load user data -> $e");
+    }
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -48,22 +78,23 @@ class _JobListScreenState extends State<JobListScreen>
     try {
       final active = await JobService.getActiveJobs();
       final history = await JobService.getJobHistory();
-      if (mounted)
+      if (mounted) {
         setState(() {
           _active = active;
           _history = history;
           _loading = false;
         });
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _error = e.toString();
           _loading = false;
         });
+      }
     }
   }
 
-  // ── Terima tugas ────────────────────────────────────────────────────────
   Future<void> _accept(Job job) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -83,12 +114,7 @@ class _JobListScreenState extends State<JobListScreen>
                 child: const Text('Batal', style: TextStyle(color: _kSub)),
               ),
               FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: _kPrimary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
+                style: FilledButton.styleFrom(backgroundColor: _kPrimary),
                 onPressed: () => Navigator.pop(context, true),
                 child: const Text('Ambil'),
               ),
@@ -99,22 +125,19 @@ class _JobListScreenState extends State<JobListScreen>
     try {
       await JobService.acceptJob(job.id);
       _load();
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Tugas berhasil diambil!'),
-            backgroundColor: _kGreen,
-          ),
-        );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tugas berhasil diambil!'),
+          backgroundColor: _kGreen,
+        ),
+      );
     } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal: $e'), backgroundColor: _kRed),
-        );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal: $e'), backgroundColor: _kRed),
+      );
     }
   }
 
-  // ── Buka halaman progress ────────────────────────────────────────────────
   Future<void> _openProgress(Job job) async {
     await Navigator.push(
       context,
@@ -123,245 +146,149 @@ class _JobListScreenState extends State<JobListScreen>
     _load();
   }
 
-  // ── Warna & label status ─────────────────────────────────────────────────
-  Color _statusColor(String s) {
-    switch (s) {
-      case 'pending':
-        return _kAmber;
-      case 'process':
-        return _kPrimary;
-      case 'completed':
-        return _kGreen;
-      default:
-        return Colors.grey;
+  // ── Fungsi Aksi Dinamis ──────────────────────────────────────────────────
+  Widget _buildActionButton(Job job, bool isHistory) {
+    if (isHistory) {
+      return SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: () => _openProgress(job),
+          icon: const Icon(Icons.visibility_outlined, size: 18),
+          label: const Text('Lihat Detail'),
+        ),
+      );
     }
+
+    // Ambil ID teknisi dari data Job (mendukung data root atau nested object)
+    final String jobTechId =
+        (job.technicianId ?? job.technician?['id'] ?? 0).toString();
+
+    // Ambil ID user yang login (pastikan sudah di-load di initState)
+    final String loginUserId = _currentUserId.toString();
+
+    // DEBUG: Cek di console VS Code apakah angkanya sama
+    print("ID Tugas: $jobTechId | ID Login: $loginUserId");
+
+    final bool isMyJob = jobTechId == loginUserId && loginUserId != "null";
+
+    if (job.isPending) {
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: isMyJob ? () => _accept(job) : null,
+          icon: const Icon(Icons.check_circle_outline, size: 18),
+          label: Text(
+            isMyJob ? 'AMBIL TUGAS & MULAI' : 'Tugas untuk Teknisi Lain',
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor:
+                isMyJob ? const Color(0xFF1A237E) : Colors.grey[300],
+            foregroundColor: isMyJob ? Colors.white : Colors.grey[600],
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (job.isProcess) {
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: isMyJob ? () => _openProgress(job) : null,
+          icon: const Icon(Icons.upload_outlined, size: 18),
+          label: Text(
+            isMyJob
+                ? 'Input Progress Tahap ${job.currentStep}'
+                : 'Sedang dikerjakan teknisi',
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor:
+                isMyJob ? const Color(0xFF1565C0) : Colors.grey[200],
+            foregroundColor: isMyJob ? Colors.white : Colors.grey[500],
+          ),
+        ),
+      );
+    }
+
+    return const SizedBox();
   }
 
-  String _statusLabel(String s) {
-    switch (s) {
-      case 'pending':
-        return 'Menunggu';
-      case 'process':
-        return 'Berlangsung';
-      case 'completed':
-        return 'Selesai';
-      default:
-        return s;
-    }
-  }
-
-  // ── Kartu tugas ──────────────────────────────────────────────────────────
   Widget _buildCard(Job job, {bool isHistory = false}) {
-    final color = _statusColor(job.status);
+    final statusColor =
+        job.status == 'pending'
+            ? _kAmber
+            : (job.status == 'process' ? _kPrimary : _kGreen);
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.3), width: 1),
         boxShadow: [
-          BoxShadow(
-            color: _kPrimary.withOpacity(0.06),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
+          // Gunakan withValues jika menggunakan Flutter terbaru,
+          // atau biarkan withOpacity jika versi lama, tapi pastikan logikanya benar.
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    job.title,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: _kText,
-                    ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    _statusLabel(job.status),
-                    style: TextStyle(
-                      color: color,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            // Deskripsi
-            if (job.description != null && job.description!.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                job.description!,
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-            const SizedBox(height: 10),
-
-            // Info baris
-            Row(
-              children: [
-                Icon(Icons.person_outline, size: 13, color: Colors.grey[500]),
-                const SizedBox(width: 4),
-                Text(
-                  job.cs?['name'] ?? '-',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
-                if (job.isProcess) ...[
-                  const SizedBox(width: 14),
-                  Icon(
-                    Icons.stairs_outlined,
-                    size: 13,
-                    color: Colors.grey[500],
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Tahap ${job.currentStep}/4',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                  ),
-                ],
-                if (job.createdAt != null) ...[
-                  const Spacer(),
-                  Text(
-                    job.createdAt!.substring(0, 10),
-                    style: TextStyle(fontSize: 11, color: Colors.grey[400]),
-                  ),
-                ],
-              ],
-            ),
-
-            // Progress bar saat process
-            if (job.isProcess) ...[
-              const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: ((job.currentStep ?? 1) - 1) / 4,
-                  minHeight: 5,
-                  backgroundColor: _kPrimary.withOpacity(0.1),
-                  color: _kPrimary,
-                ),
-              ),
-            ],
-
-            const SizedBox(height: 14),
-
-            // Tombol aksi
-            if (!isHistory) ...[
-              if (job.isPending)
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _accept(job),
-                    icon: const Icon(Icons.check_circle_outline, size: 18),
-                    label: const Text('Terima & Mulai Tugas'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _kAmber,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-              if (job.isProcess)
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _openProgress(job),
-                    icon: const Icon(Icons.upload_outlined, size: 18),
-                    label: Text('Input Progress Tahap ${job.currentStep}'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _kPrimary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-            ] else
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => _openProgress(job),
-                  icon: const Icon(Icons.visibility_outlined, size: 18),
-                  label: const Text('Lihat Detail'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _kPrimary,
-                    side: BorderSide(color: _kPrimary.withOpacity(0.4)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            // FIX DI SINI: Ganti .between menjadi .spaceBetween
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  job.title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
                   ),
                 ),
               ),
-
-            // Feedback pimpinan
-            if (job.feedback != null && job.feedback!.isNotEmpty) ...[
-              const SizedBox(height: 10),
               Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: _kPrimary.withOpacity(0.06),
+                  color: statusColor.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _kPrimary.withOpacity(0.15)),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Feedback Pimpinan',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.blue[700],
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      job.feedback!,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.blue[900],
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  job.status.toUpperCase(),
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
-          ],
-        ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            job.description ?? '',
+            style: const TextStyle(color: _kSub, fontSize: 13),
+            maxLines: 2,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Icon(Icons.person, size: 14, color: _kSub),
+              const SizedBox(width: 4),
+              Text(
+                "Teknisi: ${job.technician?['name'] ?? '-'}",
+                style: const TextStyle(fontSize: 12, color: _kText),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildActionButton(job, isHistory),
+        ],
       ),
     );
   }
 
-  // ── BUILD ────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -369,179 +296,38 @@ class _JobListScreenState extends State<JobListScreen>
       appBar: AppBar(
         title: const Text(
           'Tracker Tugas',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-            fontSize: 18,
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
         backgroundColor: _kPrimary,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          IconButton(
-            onPressed: _load,
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-          ),
-        ],
         bottom: TabBar(
           controller: _tab,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white54,
           indicatorColor: Colors.white,
-          tabs: [
-            Tab(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.work_outline, size: 16),
-                  const SizedBox(width: 6),
-                  const Text('Aktif'),
-                  if (_active.isNotEmpty) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '${_active.length}',
-                        style: const TextStyle(
-                          color: _kPrimary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const Tab(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.history, size: 16),
-                  SizedBox(width: 6),
-                  Text('Riwayat'),
-                ],
-              ),
-            ),
-          ],
+          tabs: const [Tab(text: 'Aktif'), Tab(text: 'Riwayat')],
         ),
       ),
       body:
           _loading
-              ? const Center(child: CircularProgressIndicator(color: _kPrimary))
-              : _error != null
-              ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
-                    const SizedBox(height: 12),
-                    Text(
-                      _error!,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey[600]),
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      style: FilledButton.styleFrom(backgroundColor: _kPrimary),
-                      onPressed: _load,
-                      child: const Text('Coba Lagi'),
-                    ),
-                  ],
-                ),
-              )
+              ? const Center(child: CircularProgressIndicator())
               : TabBarView(
                 controller: _tab,
                 children: [
-                  // ── Tab Aktif ──
-                  RefreshIndicator(
-                    onRefresh: _load,
-                    child:
-                        _active.isEmpty
-                            ? ListView(
-                              children: [
-                                SizedBox(
-                                  height:
-                                      MediaQuery.of(context).size.height * 0.25,
-                                ),
-                                const Icon(
-                                  Icons.inbox_outlined,
-                                  size: 56,
-                                  color: Colors.grey,
-                                ),
-                                const SizedBox(height: 12),
-                                const Text(
-                                  'Tidak ada tugas aktif',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Colors.grey,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                const Text(
-                                  'Tugas baru dari CS akan muncul di sini',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Colors.grey,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            )
-                            : ListView.builder(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              itemCount: _active.length,
-                              itemBuilder: (_, i) => _buildCard(_active[i]),
-                            ),
-                  ),
-
-                  // ── Tab Riwayat ──
-                  RefreshIndicator(
-                    onRefresh: _load,
-                    child:
-                        _history.isEmpty
-                            ? ListView(
-                              children: [
-                                SizedBox(
-                                  height:
-                                      MediaQuery.of(context).size.height * 0.25,
-                                ),
-                                const Icon(
-                                  Icons.history_toggle_off,
-                                  size: 56,
-                                  color: Colors.grey,
-                                ),
-                                const SizedBox(height: 12),
-                                const Text(
-                                  'Belum ada riwayat tugas',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Colors.grey,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            )
-                            : ListView.builder(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              itemCount: _history.length,
-                              itemBuilder:
-                                  (_, i) =>
-                                      _buildCard(_history[i], isHistory: true),
-                            ),
-                  ),
+                  _buildList(_active, false),
+                  _buildList(_history, true),
                 ],
               ),
+    );
+  }
+
+  Widget _buildList(List<Job> list, bool isHistory) {
+    if (list.isEmpty) return const Center(child: Text("Tidak ada tugas"));
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView.builder(
+        padding: const EdgeInsets.only(top: 16),
+        itemCount: list.length,
+        itemBuilder:
+            (context, index) => _buildCard(list[index], isHistory: isHistory),
+      ),
     );
   }
 }

@@ -1,9 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:sapa_jonusa/api/api.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sapa_jonusa/api/api.dart' as Api;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 // ── Model ─────────────────────────────────────────────────────────────────────
 
@@ -12,7 +11,8 @@ class Job {
   final String title;
   final String? description;
   final String status;
-  final int currentStep;
+  final int? currentStep;
+  final int? technicianId; // PINDAHKAN KE SINI (sebagai properti class)
   final String? feedback;
   final Map<String, dynamic>? cs;
   final Map<String, dynamic>? technician;
@@ -25,7 +25,8 @@ class Job {
     required this.title,
     this.description,
     required this.status,
-    required this.currentStep,
+    this.currentStep,
+    this.technicianId, // Masukkan ke constructor dengan benar
     this.feedback,
     this.cs,
     this.technician,
@@ -42,9 +43,9 @@ class Job {
     return Job(
       id: json['id'] ?? 0,
       title: json['title'] ?? '',
+      technicianId: json['technician_id'], // Ambil ID teknisi dari database
       description: json['description'],
       status: json['status'] ?? 'pending',
-      // Gunakan tryParse agar aman jika current_step datang sebagai String atau null
       currentStep: int.tryParse(json['current_step']?.toString() ?? '1') ?? 1,
       feedback: json['feedback'],
       cs: json['cs'] != null ? Map<String, dynamic>.from(json['cs']) : null,
@@ -85,7 +86,7 @@ class JobTracker {
   factory JobTracker.fromJson(Map<String, dynamic> json) {
     return JobTracker(
       id: json['id'] ?? 0,
-      stepNumber: int.tryParse(json['step_number']?.toString() ?? '0') ?? 0,
+      stepNumber: json['step_number'] ?? 0,
       descriptionValue: json['description_value'],
       photoUrl: json['photo_url'],
       videoUrl: json['video_url'],
@@ -120,37 +121,16 @@ class JobComment {
   }
 }
 
-class TechnicianUser {
-  final int id;
-  final String name;
-  final String email;
-  final String division;
-
-  TechnicianUser({
-    required this.id,
-    required this.name,
-    required this.email,
-    required this.division,
-  });
-
-  factory TechnicianUser.fromJson(Map<String, dynamic> json) {
-    return TechnicianUser(
-      id: json['id'] ?? 0,
-      name: json['name'] ?? '',
-      email: json['email'] ?? '',
-      division: json['division'] ?? '-',
-    );
-  }
-}
-
 // ── Service ───────────────────────────────────────────────────────────────────
 
 class JobService {
-  static const String _apiPath = "$baseUrl/api";
+  static const _storage = FlutterSecureStorage();
+
+  static String get _baseUrl => '${Api.baseUrl}/api';
 
   static Future<String> _token() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('auth_token') ?? '';
+    final token = await _storage.read(key: 'auth_token');
+    return token ?? '';
   }
 
   static Map<String, String> _headers(String token) => {
@@ -158,59 +138,52 @@ class JobService {
     'Accept': 'application/json',
   };
 
+  static List<Job> _parseJobList(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is List) {
+        return decoded
+            .map((j) => Job.fromJson(j as Map<String, dynamic>))
+            .toList();
+      }
+      if (decoded is Map<String, dynamic> && decoded.containsKey('data')) {
+        final data = decoded['data'];
+        if (data is List) {
+          return data
+              .map((j) => Job.fromJson(j as Map<String, dynamic>))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
   static Future<List<Job>> getActiveJobs() async {
     final token = await _token();
-    try {
-      final res = await http.get(
-        Uri.parse('$_apiPath/jobs/active'),
-        headers: _headers(token),
-      );
-
-      if (res.statusCode == 200) {
-        final dynamic decoded = jsonDecode(res.body);
-        List<dynamic> data =
-            (decoded is Map && decoded.containsKey('data'))
-                ? decoded['data']
-                : (decoded as List);
-        return data.map((j) => Job.fromJson(j)).toList();
-      }
-    } catch (e) {
-      debugPrint("Error Active Jobs: $e");
-    }
-    return [];
+    final res = await http.get(
+      Uri.parse('$_baseUrl/jobs/active'),
+      headers: _headers(token),
+    );
+    if (res.statusCode == 200) return _parseJobList(res.body);
+    throw Exception('Sesi habis (401). Silakan login ulang.');
   }
 
   static Future<List<Job>> getJobHistory() async {
     final token = await _token();
-    try {
-      final res = await http.get(
-        Uri.parse('$_apiPath/jobs/history'), // Gunakan 10.0.2.2:8000/api
-        headers: _headers(token),
-      );
-
-      if (res.statusCode == 200) {
-        final dynamic body = jsonDecode(res.body);
-
-        // Ambil List dari dalam key 'data' (Wajib karena Laravel mengirim {success:true, data:[]})
-        List<dynamic> data;
-        if (body is Map && body.containsKey('data')) {
-          data = body['data'];
-        } else {
-          data = body as List;
-        }
-
-        return data.map((j) => Job.fromJson(j)).toList();
-      }
-    } catch (e) {
-      debugPrint("Error Load History: $e");
-    }
-    return []; // Balikkan list kosong agar loading spinner di UI berhenti
+    final res = await http.get(
+      Uri.parse('$_baseUrl/jobs/history'),
+      headers: _headers(token),
+    );
+    if (res.statusCode == 200) return _parseJobList(res.body);
+    throw Exception('Gagal memuat riwayat');
   }
 
   static Future<void> acceptJob(int jobId) async {
     final token = await _token();
     final res = await http.post(
-      Uri.parse('$_apiPath/jobs/$jobId/accept'),
+      Uri.parse('$_baseUrl/jobs/$jobId/accept'),
       headers: _headers(token),
     );
     if (res.statusCode != 200) throw Exception('Gagal menerima tugas');
@@ -225,10 +198,14 @@ class JobService {
     final token = await _token();
     final request = http.MultipartRequest(
       'POST',
-      Uri.parse('$_apiPath/jobs/$jobId/progress'),
+      Uri.parse('$_baseUrl/jobs/$jobId/progress'),
     );
-    request.headers.addAll(_headers(token));
-    request.fields['description'] = description;
+    request.headers.addAll({
+      'Authorization': 'Bearer $token',
+      'Accept': 'application/json',
+    });
+    request.fields['description_value'] =
+        description; // Sesuaikan dengan key Laravel
 
     if (photoFile != null) {
       request.files.add(
@@ -245,50 +222,13 @@ class JobService {
     final res = await http.Response.fromStream(streamed);
 
     if (res.statusCode == 200) {
-      final data = jsonDecode(res.body);
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
       return {
-        'completed': data['completed'] ?? false,
         'message': data['message'] ?? '',
-        // Laravel kamu mengembalikan data job dalam key 'job' atau 'data'
-        'job': Job.fromJson(data['job'] ?? data['data']),
+        'job': Job.fromJson(data['job'] as Map<String, dynamic>),
       };
     }
     throw Exception('Gagal update progress');
-  }
-
-  static Future<List<TechnicianUser>> getTechnicians() async {
-    final token = await _token();
-    final res = await http.get(
-      Uri.parse('$_apiPath/jobs/technicians'),
-      headers: _headers(token),
-    );
-    if (res.statusCode == 200) {
-      final List<dynamic> data = jsonDecode(res.body);
-      return data.map((t) => TechnicianUser.fromJson(t)).toList();
-    }
-    return [];
-  }
-
-  static Future<Job> createJob({
-    required String title,
-    required String description,
-    required int technicianId,
-  }) async {
-    final token = await _token();
-    final res = await http.post(
-      Uri.parse('$_apiPath/jobs'),
-      headers: {..._headers(token), 'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'title': title,
-        'description': description,
-        'technician_id': technicianId,
-      }),
-    );
-    if (res.statusCode == 201) {
-      final data = jsonDecode(res.body);
-      return Job.fromJson(data['job'] ?? data['data']);
-    }
-    throw Exception('Gagal membuat tugas');
   }
 
   static Future<JobComment> addComment({
@@ -297,13 +237,13 @@ class JobService {
   }) async {
     final token = await _token();
     final res = await http.post(
-      Uri.parse('$_apiPath/jobs/$jobId/comments'),
+      Uri.parse('$_baseUrl/jobs/$jobId/comments'),
       headers: {..._headers(token), 'Content-Type': 'application/json'},
       body: jsonEncode({'comment': comment}),
     );
     if (res.statusCode == 201) {
-      final data = jsonDecode(res.body);
-      return JobComment.fromJson(data['comment']);
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      return JobComment.fromJson(data['comment'] as Map<String, dynamic>);
     }
     throw Exception('Gagal mengirim komentar');
   }
