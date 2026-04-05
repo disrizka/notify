@@ -11,6 +11,7 @@ import 'package:sapa_jonusa/karyawan/chat/chat_screen.dart';
 import 'package:sapa_jonusa/karyawan/checkin_screen.dart';
 import 'package:sapa_jonusa/karyawan/checkout_screen.dart';
 import 'package:sapa_jonusa/karyawan/cuti_screen.dart';
+import 'package:sapa_jonusa/karyawan/job/job_list_screen.dart';
 import 'package:sapa_jonusa/karyawan/profile_screen.dart';
 import 'package:sapa_jonusa/karyawan/sakit_screen.dart';
 import "notification_screen.dart";
@@ -67,25 +68,34 @@ class _KaryawanHomeScreenState extends State<KaryawanHomeScreen>
   Future<void> _fetchNotifications() async {
     try {
       final token = await _storage.read(key: 'auth_token');
+
+      // DEBUG: cek user yang sedang login
+      final userRes = await http.get(
+        Uri.parse('${Api.baseUrl}/api/user'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+      print('DEBUG USER LOGIN: ${userRes.body}');
+
       final res = await http.get(
-        Uri.parse(
-          '${Api.baseUrl}/api/notifications/count',
-        ), // Pastikan route ini ada di api.php
+        Uri.parse('${Api.baseUrl}/api/notifications/count'),
         headers: {
           'Authorization': 'Bearer $token',
           'Accept': 'application/json',
         },
       );
 
+      print('DEBUG NOTIF RESPONSE: ${res.body}');
+
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
         int newCount = data['unread_count'] ?? 0;
 
-        // Ambil pesan dan judul dari API
         String title = data['latest_title'] ?? "Sapa Jonusa";
         String message = data['latest_message'] ?? "Ada pesan baru untukmu";
 
-        // Popup muncul HANYA jika ada penambahan jumlah notif
         if (newCount > _lastNotifCount) {
           _showNotificationPopup(title, message);
         }
@@ -1278,6 +1288,13 @@ class _MenuGrid extends StatelessWidget {
       bg: Color.fromARGB(255, 221, 255, 249),
       iconColor: Color.fromARGB(255, 0, 100, 100),
       route: ChatScreen(),
+    ),
+    _MenuDef(
+      icon: Icons.task_alt_rounded,
+      label: 'Tracker tugas',
+      bg: Color(0xFFE8F5E9),
+      iconColor: Color(0xFF1B5E20),
+      route: JobListScreen(),
     ),
     _MenuDef(
       icon: Icons.history_rounded,

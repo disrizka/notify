@@ -90,7 +90,6 @@ class _CheckinScreenState extends State<CheckinScreen>
         },
       );
 
-      // DEBUG: Lihat isi respon di console VS Code
       debugPrint("Respon API: ${response.body}");
 
       if (response.statusCode == 200) {
@@ -109,7 +108,6 @@ class _CheckinScreenState extends State<CheckinScreen>
 
           _tolerance = int.parse(data['late_tolerance'].toString());
 
-          // Validasi status terlambat setelah data diupdate
           _validateTime();
         });
       }
@@ -121,7 +119,6 @@ class _CheckinScreenState extends State<CheckinScreen>
   void _validateTime() {
     final now = DateTime.now();
 
-    // Pisahkan jam dan menit dari "07:00"
     final parts = _checkInLimit.split(':');
     if (parts.length < 2) return;
 
@@ -133,11 +130,9 @@ class _CheckinScreenState extends State<CheckinScreen>
       int.parse(parts[1]),
     );
 
-    // Tambahkan toleransi menit
     final finalDeadline = limitTime.add(Duration(minutes: _tolerance));
 
     setState(() {
-      // Jika sekarang sudah lewat dari jam batas + toleransi, maka telat
       _isLate = now.isAfter(finalDeadline);
     });
   }
@@ -275,7 +270,6 @@ class _CheckinScreenState extends State<CheckinScreen>
   Widget build(BuildContext context) {
     final canSubmit =
         _isInRadius && _imageFile != null && !_isLate && !_isSubmitting;
-
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
