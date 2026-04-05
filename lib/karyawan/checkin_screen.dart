@@ -46,6 +46,8 @@ class _CheckinScreenState extends State<CheckinScreen>
   bool _isLoading = true;
   bool _isSubmitting = false;
   bool _isLate = false;
+  bool _isHoliday = false; // Status apakah hari ini libur
+  String _holidayName = ""; // Nama hari libur
 
   String _currentAddress = "Mencari lokasi...";
   LatLng? _currentPosition;
@@ -90,26 +92,33 @@ class _CheckinScreenState extends State<CheckinScreen>
         },
       );
 
-      debugPrint("Respon API: ${response.body}");
-
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
-        final data = responseData['data'] ?? responseData;
+
+        // Ambil objek data dari dalam key 'data'
+        final data = responseData['data'];
 
         setState(() {
           _officeLat = double.parse(data['latitude'].toString());
           _officeLng = double.parse(data['longitude'].toString());
           _officeRadius = double.parse(data['radius'].toString());
 
-          // Ambil jam masuk dan pastikan formatnya jam:menit
-          String rawTime = data['check_in_time'].toString();
+          // FIX: Pastikan parsing boolean dan string aman
+          _isHoliday = data['is_holiday'] == true;
+          _holidayName = data['holiday_name']?.toString() ?? "";
+
+          String rawTime = data['check_in_time']?.toString() ?? "08:00";
           _checkInLimit =
               rawTime.length >= 5 ? rawTime.substring(0, 5) : rawTime;
-
-          _tolerance = int.parse(data['late_tolerance'].toString());
+          _tolerance = int.parse(data['late_tolerance']?.toString() ?? "0");
 
           _validateTime();
         });
+
+        // Re-validate radius setelah config masuk
+        if (_currentPosition != null) {
+          _validateRadius(_currentPosition!);
+        }
       }
     } catch (e) {
       debugPrint('Error config: $e');
@@ -180,6 +189,13 @@ class _CheckinScreenState extends State<CheckinScreen>
   }
 
   Future<void> _submitCheckIn() async {
+    if (_isHoliday) {
+      _showSnackBar(
+        "Tidak dapat absen, hari ini adalah $_holidayName!",
+        isError: true,
+      );
+      return;
+    }
     if (_isLate) {
       _showSnackBar("Maaf, waktu masuk sudah ditutup!", isError: true);
       return;
@@ -269,7 +285,11 @@ class _CheckinScreenState extends State<CheckinScreen>
   @override
   Widget build(BuildContext context) {
     final canSubmit =
-        _isInRadius && _imageFile != null && !_isLate && !_isSubmitting;
+        _isInRadius &&
+        _imageFile != null &&
+        !_isLate &&
+        !_isSubmitting &&
+        !_isHoliday;
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -651,68 +671,38 @@ class _CheckinScreenState extends State<CheckinScreen>
 
   // ─── Submit Button ──────────────────────────────────────────────────────────
   Widget _buildSubmitButton(bool canSubmit) {
+    // Jika libur, warna tombol jadi merah pudar atau abu-abu gelap
+    final buttonColor =
+        _isHoliday
+            ? [
+              const Color(0xFFB71C1C),
+              const Color(0xFFD32F2F),
+            ] // Merah tua jika libur
+            : (canSubmit
+                ? [kDeepBlue, kAccentBlue]
+                : [const Color(0xFFB0BEC5), const Color(0xFFCFD8DC)]);
+
     return SizedBox(
       width: double.infinity,
       height: 52,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          gradient:
-              canSubmit
-                  ? const LinearGradient(
-                    colors: [kDeepBlue, kAccentBlue],
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                  )
-                  : const LinearGradient(
-                    colors: [Color(0xFFB0BEC5), Color(0xFFCFD8DC)],
-                  ),
+          gradient: LinearGradient(colors: buttonColor),
           borderRadius: BorderRadius.circular(16),
-          boxShadow:
-              canSubmit
-                  ? [
-                    BoxShadow(
-                      color: kAccentBlue.withOpacity(0.45),
-                      blurRadius: 18,
-                      offset: const Offset(0, 7),
-                    ),
-                  ]
-                  : [],
         ),
         child: ElevatedButton(
           onPressed: canSubmit ? _submitCheckIn : null,
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.transparent,
             shadowColor: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+          ),
+          child: Text(
+            _isHoliday ? "HARI LIBUR" : "KIRIM ABSENSI",
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
             ),
           ),
-          child:
-              _isSubmitting
-                  ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2.5,
-                    ),
-                  )
-                  : Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
-                      Icon(Icons.fingerprint, color: Colors.white, size: 22),
-                      SizedBox(width: 10),
-                      Text(
-                        "KIRIM ABSENSI",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                    ],
-                  ),
         ),
       ),
     );
@@ -720,14 +710,19 @@ class _CheckinScreenState extends State<CheckinScreen>
 
   // ─── Status Card ───────────────────────────────────────────────────────────
   Widget _buildStatusCard() {
-    final hasError = !_isInRadius || _isLate;
+    // Masukkan _isHoliday ke syarat error
+    final hasError = !_isInRadius || _isLate || _isHoliday;
     final bgColor =
         hasError ? const Color(0xFFFFF3F3) : const Color(0xFFF0FBF8);
     final mainColor = hasError ? kErrorRed : kSuccessGreen;
 
     String statusText;
     IconData statusIcon;
-    if (_isLate) {
+
+    if (_isHoliday) {
+      statusText = "Hari Libur: $_holidayName";
+      statusIcon = Icons.event_busy_rounded;
+    } else if (_isLate) {
       statusText = "Waktu Absen Habis!";
       statusIcon = Icons.timer_off_rounded;
     } else if (!_isInRadius) {
@@ -737,7 +732,6 @@ class _CheckinScreenState extends State<CheckinScreen>
       statusText = "Lokasi Terverifikasi";
       statusIcon = Icons.verified_rounded;
     }
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(

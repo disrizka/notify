@@ -1,8 +1,3 @@
-// lib/karyawan/job/job_list_screen.dart
-//
-// Dipanggil dari karyawan_screen.dart lewat menu grid "Tugas"
-// Style konsisten dengan attendance_history_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:sapa_jonusa/service/job_service.dart';
 import 'job_progress_screen.dart';
