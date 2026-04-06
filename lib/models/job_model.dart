@@ -1,5 +1,31 @@
-// lib/models/job_model.dart
+import 'package:sapa_jonusa/service/job_service.dart';
 
+// --- 1. MODEL KOMENTAR (BARU) ---
+class JobComment {
+  final int id;
+  final String comment;
+  final String userName;
+  final int userId;
+  final String createdAt;
+
+  JobComment({
+    required this.id,
+    required this.comment,
+    required this.userName,
+    required this.userId,
+    required this.createdAt,
+  });
+
+  factory JobComment.fromJson(Map<String, dynamic> json) => JobComment(
+    id: json['id'],
+    comment: json['comment'],
+    userName: json['user_name'] ?? '-',
+    userId: json['user_id'] ?? 0,
+    createdAt: json['created_at'] ?? '',
+  );
+}
+
+// --- 2. MODEL TRACKER (RIWAYAT TAHAP) ---
 class JobTracker {
   final int id;
   final int stepNumber;
@@ -19,7 +45,7 @@ class JobTracker {
 
   factory JobTracker.fromJson(Map<String, dynamic> json) => JobTracker(
     id: json['id'],
-    stepNumber: json['step_number'],
+    stepNumber: json['step_number'] ?? 0,
     descriptionValue: json['description_value'],
     photoUrl: json['photo_url'],
     videoUrl: json['video_url'],
@@ -27,17 +53,19 @@ class JobTracker {
   );
 }
 
+// --- 3. MODEL JOB (DATA UTAMA) ---
 class Job {
   final int id;
   final String title;
   final String? description;
-  final String status; // pending | process | completed
+  final String status;
   final int? currentStep;
   final String? feedback;
   final String? createdAt;
   final Map<String, dynamic>? cs;
   final Map<String, dynamic>? technician;
   final List<JobTracker> trackers;
+  final List<JobComment> comments; // TAMBAHKAN INI
 
   Job({
     required this.id,
@@ -50,7 +78,18 @@ class Job {
     this.cs,
     this.technician,
     required this.trackers,
+    required this.comments, // TAMBAHKAN INI
   });
+
+  // GETTER: Ambil ID Teknisi secara aman
+  int get technicianId {
+    if (technician != null && technician!['id'] != null) {
+      return technician!['id'] is int
+          ? technician!['id']
+          : int.parse(technician!['id'].toString());
+    }
+    return 0;
+  }
 
   factory Job.fromJson(Map<String, dynamic> json) => Job(
     id: json['id'],
@@ -65,9 +104,15 @@ class Job {
         json['technician'] != null
             ? Map<String, dynamic>.from(json['technician'])
             : null,
+    // Parsing List Tracker
     trackers:
         (json['trackers'] as List<dynamic>? ?? [])
             .map((t) => JobTracker.fromJson(t))
+            .toList(),
+    // Parsing List Komentar (PENTING!)
+    comments:
+        (json['comments'] as List<dynamic>? ?? [])
+            .map((c) => JobComment.fromJson(c))
             .toList(),
   );
 

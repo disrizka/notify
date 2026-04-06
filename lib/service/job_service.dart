@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:sapa_jonusa/api/api.dart' as Api;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:sapa_jonusa/api/api.dart';
 
 // ── Model ─────────────────────────────────────────────────────────────────────
 
@@ -231,20 +233,53 @@ class JobService {
     throw Exception('Gagal update progress');
   }
 
-  static Future<JobComment> addComment({
-    required int jobId,
-    required String comment,
-  }) async {
-    final token = await _token();
-    final res = await http.post(
-      Uri.parse('$_baseUrl/jobs/$jobId/comments'),
-      headers: {..._headers(token), 'Content-Type': 'application/json'},
-      body: jsonEncode({'comment': comment}),
+  static Future<Map<String, dynamic>> addComment(
+    int jobId,
+    String comment,
+  ) async {
+    final token = await _storage.read(key: 'auth_token');
+
+    // 1. Pastikan URL menggunakan 'comments' (pakai s) sesuai routes/api.php
+    final url = Uri.parse('$baseUrl/jobs/$jobId/comments');
+
+    // 2. WAJIB menggunakan http.post
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json', // WAJIB ADA INI
+      },
+      body: jsonEncode({
+        'comment':
+            comment, // Key ini harus sama dengan $request->comment di Laravel
+      }),
     );
-    if (res.statusCode == 201) {
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      return JobComment.fromJson(data['comment'] as Map<String, dynamic>);
+
+    // Debugging: Lihat apa kata server kalau gagal
+    debugPrint("STATUS: ${response.statusCode}");
+    debugPrint("BODY: ${response.body}");
+
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Gagal kirim komentar: ${response.statusCode}');
     }
-    throw Exception('Gagal mengirim komentar');
+  }
+
+  static Future<Job> getJobDetail(int jobId) async {
+    final token = await _storage.read(key: 'auth_token');
+    final response = await http.get(
+      Uri.parse('$baseUrl/jobs/$jobId'),
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      // Jika Laravel membungkus data dalam key 'job', gunakan data['job']
+      return Job.fromJson(data['job'] ?? data);
+    } else {
+      throw Exception('Gagal mengambil data terbaru');
+    }
   }
 }

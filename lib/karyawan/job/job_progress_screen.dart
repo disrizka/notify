@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:sapa_jonusa/service/job_service.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // Palette Warna
 const _kPrimary = Color(0xFF1565C0);
@@ -29,6 +30,7 @@ class _JobProgressScreenState extends State<JobProgressScreen> {
   File? _photo;
   File? _video;
   final _picker = ImagePicker();
+  bool _sendingComment = false;
 
   bool _uploading = false;
   bool _isLoadingUser = true;
@@ -113,6 +115,143 @@ class _JobProgressScreenState extends State<JobProgressScreen> {
       return true;
 
     return false;
+  }
+
+  // 1. Tambahkan fungsi Kirim Komentar
+
+  // 2. Update Widget _buildCommentSection
+  Widget _buildCommentSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // LIST KOMENTAR
+        if (_job.comments.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Center(
+              child: Text(
+                "Belum ada diskusi",
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+            ),
+          )
+        else
+          ..._job.comments.map((c) => _buildCommentBubble(c)),
+
+        const SizedBox(height: 16),
+
+        // INPUT KOMENTAR
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(25),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _commentCtrl,
+                  decoration: const InputDecoration(
+                    hintText: 'Tulis komentar...',
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+              _sendingComment
+                  ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                  : IconButton(
+                    icon: const Icon(Icons.send, color: Colors.blue),
+                    onPressed: _submitComment,
+                  ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _submitComment() async {
+    if (_commentCtrl.text.trim().isEmpty) return;
+
+    setState(() => _sendingComment = true);
+    try {
+      final res = await JobService.addComment(
+        _job.id,
+        _commentCtrl.text.trim(),
+      );
+
+      if (res['success'] == true) {
+        // Panggil refresh agar komentar dari admin di web juga langsung muncul
+        await _refreshJob();
+
+        if (mounted) {
+          setState(() {
+            _commentCtrl.clear();
+            _sendingComment = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) setState(() => _sendingComment = false);
+      debugPrint("Komentar Gagal: $e");
+    }
+  }
+
+  Future<void> _refreshJob() async {
+    try {
+      final updatedJob = await JobService.getJobDetail(_job.id);
+      if (mounted) {
+        setState(() => _job = updatedJob);
+      }
+    } catch (e) {
+      debugPrint("Refresh Gagal: $e");
+    }
+  }
+
+  // Fungsi untuk ambil data terbaru (supaya komentar admin juga masuk)
+
+  Widget _buildCommentBubble(JobComment c) {
+    // FIX: Pastikan perbandingan tipe datanya sama (sama-sama int)
+    final int myId = int.tryParse(_currentUserId) ?? 0;
+    bool isMe = c.userId == myId;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Column(
+        crossAxisAlignment:
+            isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          Text(
+            c.userName,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey,
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isMe ? Colors.blue[100] : Colors.white,
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Text(c.comment, style: const TextStyle(fontSize: 13)),
+          ),
+          // FIX: Tambahkan ?? '' agar tidak error Null Safety
+          Text(
+            c.createdAt ?? '',
+            style: const TextStyle(fontSize: 9, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -264,21 +403,21 @@ class _JobProgressScreenState extends State<JobProgressScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Color(0xFFFFF9C4).withOpacity(0.5),
+        color: Colors.blue[50],
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Color(0xFFFBC02D).withOpacity(0.3)),
+        border: Border.all(color: Colors.blue[100]!),
       ),
       child: Row(
         children: [
-          const Icon(Icons.lock_outline, color: Color(0xFFF57F17), size: 20),
+          const Icon(Icons.info_outline, color: _kPrimary),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              "Hanya teknisi (${_job.technician?['name'] ?? 'Tester'}) yang dapat mengisi progress. Anda hanya dapat memantau.",
-              style: TextStyle(
-                color: Color(0xFFF57F17),
+              "Tugas ini sedang dikerjakan oleh ${_job.technician?['name'] ?? 'Teknisi'}. Anda hanya dapat memantau progress.",
+              style: const TextStyle(
+                color: _kPrimary,
                 fontSize: 12,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ),
@@ -312,46 +451,114 @@ class _JobProgressScreenState extends State<JobProgressScreen> {
   Widget _buildTrackerTile(JobTracker t) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade100),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 12,
-                backgroundColor: _kGreen,
-                child: Text(
-                  '${t.stepNumber}',
-                  style: const TextStyle(color: Colors.white, fontSize: 11),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                'Tahap ${t.stepNumber}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
-              const Spacer(),
-              const Icon(Icons.check_circle, color: _kGreen, size: 16),
-            ],
-          ),
-          if (t.descriptionValue != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Text(
-                t.descriptionValue!,
-                style: const TextStyle(fontSize: 13, color: _kText),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          leading: CircleAvatar(
+            radius: 14,
+            backgroundColor: _kGreen.withOpacity(0.1),
+            child: Text(
+              '${t.stepNumber}',
+              style: const TextStyle(
+                color: _kGreen,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
               ),
             ),
-        ],
+          ),
+          // Nama Tahap diambil dari descriptionValue yang diisi Admin saat update
+          title: Text(
+            'Tahap ${t.stepNumber}: ${t.descriptionValue ?? "Selesai"}',
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              color: _kText,
+            ),
+          ),
+          trailing: const Icon(Icons.check_circle, color: _kGreen, size: 20),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Divider(height: 20),
+                  if (t.photoUrl != null) ...[
+                    const Text(
+                      'Bukti Foto:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        color: _kSub,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.network(
+                        t.photoUrl!,
+                        width: double.infinity,
+                        height: 180,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  if (t.videoUrl != null) ...[
+                    const Text(
+                      'Bukti Video:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        color: _kSub,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    InkWell(
+                      onTap: () async {
+                        final uri = Uri.parse(t.videoUrl!);
+                        if (await canLaunchUrl(uri))
+                          await launchUrl(
+                            uri,
+                            mode: LaunchMode.externalApplication,
+                          );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: _kPrimary.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.play_circle_fill, color: _kPrimary),
+                            SizedBox(width: 12),
+                            Text(
+                              'Putar Video Bukti',
+                              style: TextStyle(
+                                color: _kPrimary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  Text(
+                    'Selesai pada: ${t.createdAt ?? "-"}',
+                    style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -366,195 +573,53 @@ class _JobProgressScreenState extends State<JobProgressScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _kPrimary.withOpacity(0.1)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Form (seperti di Web)
           Text(
-            'TAHAP $currentStep: INPUT BUKTI PEKERJAAN',
+            'INPUT PROGRESS TAHAP $currentStep',
             style: TextStyle(
               fontWeight: FontWeight.bold,
               color: _kPrimary,
-              fontSize: 14,
-              letterSpacing: 0.5,
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Divider(height: 1),
-          ),
-
-          // 1. INPUT DESKRIPSI
-          const Text(
-            'Deskripsi Pekerjaan (Wajib)',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
               fontSize: 13,
-              color: _kText,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           TextField(
             controller: _descCtrl,
-            maxLines: 4,
-            style: const TextStyle(fontSize: 13),
+            maxLines: 3,
             decoration: InputDecoration(
-              hintText: 'Jelaskan apa yang kamu lakukan di tahap ini...',
-              hintStyle: TextStyle(color: _kSub.withOpacity(0.5), fontSize: 13),
+              labelText: 'Deskripsi Tahap $currentStep',
+              hintText: 'Apa hasil pekerjaan di tahap ini?',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
               filled: true,
               fillColor: _kBg,
-              contentPadding: const EdgeInsets.all(12),
             ),
           ),
-          const SizedBox(height: 20),
-
-          // 2. INPUT FOTO (Area putus-putus senada Web)
-          const Text(
-            'Bukti Foto',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: _kText,
-            ),
-          ),
-          const SizedBox(height: 8),
-          GestureDetector(
-            onTap: _pickPhoto,
-            child: Container(
-              width: double.infinity,
-              height:
-                  _photo == null ? 80 : 150, // Lebih tinggi jika ada preview
-              decoration: BoxDecoration(
-                color: _kBg,
-                borderRadius: BorderRadius.circular(12),
-                // Efek border putus-putus senada web
-                border: Border.all(
-                  color: _kPrimary.withOpacity(0.2),
-                  style: BorderStyle.solid,
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _pickPhoto,
+                  icon: const Icon(Icons.camera_alt),
+                  label: Text(_photo == null ? 'Foto' : '✓ Foto'),
                 ),
               ),
-              child:
-                  _photo == null
-                      ? Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.add_a_photo_outlined,
-                            color: _kPrimary,
-                            size: 28,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Tambah Foto Bukti',
-                            style: TextStyle(color: _kPrimary, fontSize: 12),
-                          ),
-                        ],
-                      )
-                      : Stack(
-                        // Preview Foto
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.file(
-                              _photo!,
-                              width: double.infinity,
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                          Positioned(
-                            top: 8,
-                            right: 8,
-                            child: GestureDetector(
-                              onTap: () => setState(() => _photo = null),
-                              child: CircleAvatar(
-                                radius: 12,
-                                backgroundColor: Colors.black54,
-                                child: Icon(
-                                  Icons.close,
-                                  size: 16,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // 3. INPUT VIDEO (Area putus-putus senada Web)
-          const Text(
-            'Bukti Video',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: _kText,
-            ),
-          ),
-          const SizedBox(height: 8),
-          GestureDetector(
-            onTap: _pickVideo,
-            child: Container(
-              width: double.infinity,
-              height: 80,
-              decoration: BoxDecoration(
-                color: _kBg,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _kPrimary.withOpacity(0.2)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _pickVideo,
+                  icon: const Icon(Icons.videocam),
+                  label: Text(_video == null ? 'Video' : '✓ Video'),
+                ),
               ),
-              child:
-                  _video == null
-                      ? Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.videocam_outlined,
-                            color: _kPrimary,
-                            size: 28,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Tambah Video Bukti',
-                            style: TextStyle(color: _kPrimary, fontSize: 12),
-                          ),
-                        ],
-                      )
-                      : Row(
-                        // Indikator Video terpilih
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.check_circle, color: _kGreen),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Video terpilih ✓',
-                              style: TextStyle(color: _kGreen, fontSize: 13),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close, size: 20),
-                            onPressed: () => setState(() => _video = null),
-                          ),
-                        ],
-                      ),
-            ),
+            ],
           ),
-          const SizedBox(height: 24),
-
-          // TOMBOL SUBMIT
+          const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -563,52 +628,19 @@ class _JobProgressScreenState extends State<JobProgressScreen> {
                 backgroundColor: _kPrimary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
               ),
               child:
                   _uploading
-                      ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
+                      ? const CircularProgressIndicator(color: Colors.white)
                       : Text(
                         currentStep >= 4
                             ? 'Selesaikan Tugas ✓'
                             : 'Simpan & Lanjut Tahap $nextStep →',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
                       ),
             ),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildCommentSection() {
-    return Column(
-      children: [
-        TextField(
-          controller: _commentCtrl,
-          decoration: InputDecoration(
-            hintText: 'Tulis komentar...',
-            suffixIcon: IconButton(
-              onPressed: () {},
-              icon: const Icon(Icons.send, color: _kPrimary),
-            ),
-            border: UnderlineInputBorder(),
-          ),
-        ),
-      ],
     );
   }
 

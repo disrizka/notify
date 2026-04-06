@@ -228,13 +228,16 @@ class _JobListScreenState extends State<JobListScreen>
             ? _kAmber
             : (job.status == 'process' ? _kAccent : _kGreen);
 
+    // Mengambil ID Teknisi secara aman
     final String jobTechId =
         (job.technicianId ?? job.technician?['id'] ?? 0).toString();
     final String loginUserId = _currentUserId.toString();
-    final bool isMyJob = jobTechId == loginUserId && loginUserId != "null";
 
-    // HITUNG PROGRESS: Tahap yang selesai adalah (currentStep - 1)
-    // Jika currentStep = 2, berarti tahap 1 sudah selesai (1/4)
+    // Cek apakah ini tugas saya
+    final bool isMyJob =
+        jobTechId == loginUserId && loginUserId != "0" && loginUserId != "null";
+
+    // HITUNG PROGRESS: (currentStep - 1) / totalStep (misal 4)
     final double progressValue = ((job.currentStep ?? 1) - 1) / 4;
 
     return Container(
@@ -261,6 +264,7 @@ class _JobListScreenState extends State<JobListScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // --- HEADER: JUDUL & BADGE ---
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -292,13 +296,13 @@ class _JobListScreenState extends State<JobListScreen>
                     ],
                   ),
 
-                  // --- TAMBAHKAN PROGRESS BAR DI SINI ---
+                  // --- PROGRESS BAR (Hanya muncul jika status 'process') ---
                   if (job.status == 'process') ...[
                     const SizedBox(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
+                        const Text(
                           "Progress Kerja",
                           style: TextStyle(
                             fontSize: 11,
@@ -307,8 +311,8 @@ class _JobListScreenState extends State<JobListScreen>
                           ),
                         ),
                         Text(
-                          "${((job.currentStep ?? 1) - 1)} / 4 Selesai",
-                          style: TextStyle(
+                          "${((job.currentStep ?? 1) - 1)} / 4 Tahap Selesai",
+                          style: const TextStyle(
                             fontSize: 11,
                             color: _kAccent,
                             fontWeight: FontWeight.bold,
@@ -320,7 +324,10 @@ class _JobListScreenState extends State<JobListScreen>
                     ClipRRect(
                       borderRadius: BorderRadius.circular(10),
                       child: LinearProgressIndicator(
-                        value: progressValue,
+                        value: progressValue.clamp(
+                          0.0,
+                          1.0,
+                        ), // Agar value tidak minus/lebih dari 1
                         minHeight: 6,
                         backgroundColor: _kAccent.withOpacity(0.1),
                         color: _kAccent,
@@ -328,11 +335,12 @@ class _JobListScreenState extends State<JobListScreen>
                     ),
                   ],
 
-                  // --------------------------------------
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 16),
                     child: Divider(height: 1, color: Color(0xFFF1F5F9)),
                   ),
+
+                  // --- FOOTER: INFO TEKNISI ---
                   Row(
                     children: [
                       CircleAvatar(
@@ -345,8 +353,8 @@ class _JobListScreenState extends State<JobListScreen>
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        "Teknisi: ",
+                      const Text(
+                        "Karyawan: ",
                         style: TextStyle(
                           color: _kSub,
                           fontSize: 13,
@@ -363,7 +371,10 @@ class _JobListScreenState extends State<JobListScreen>
                       ),
                     ],
                   ),
+
                   const SizedBox(height: 20),
+
+                  // TOMBOL AKSI (Ambil Tugas / Input Progress)
                   _buildActionButton(job, isHistory, isMyJob),
                 ],
               ),
