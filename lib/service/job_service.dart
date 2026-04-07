@@ -282,4 +282,38 @@ class JobService {
       throw Exception('Gagal mengambil data terbaru');
     }
   }
+
+  static Future<List<dynamic>> getTechnicians() async {
+    final token = await _storage.read(key: 'auth_token');
+    final response = await http.get(
+      Uri.parse('$baseUrl/jobs/technicians'), // Sesuai route di api.php
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body)['technicians'];
+    }
+    return [];
+  }
+
+  static Future<Map<String, dynamic>> createJob({
+    required String title,
+    required String description,
+    required int technicianId,
+  }) async {
+    final token = await _storage.read(key: 'auth_token');
+    final response = await http.post(
+      Uri.parse('$baseUrl/jobs'), // Sesuai route POST di api.php
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'title': title,
+        'description': description,
+        'technician_id': technicianId,
+      }),
+    );
+    return jsonDecode(response.body);
+  }
 }

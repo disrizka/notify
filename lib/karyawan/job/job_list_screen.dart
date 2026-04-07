@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:sapa_jonusa/karyawan/job/job_create_screen.dart';
 import 'package:sapa_jonusa/service/job_service.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'job_progress_screen.dart';
@@ -30,7 +31,9 @@ class _JobListScreenState extends State<JobListScreen>
   List<Job> _history = [];
   bool _loading = true;
   String? _error;
-  int? _currentUserId; // Untuk simpan ID user yang login
+  int? _currentUserId; //
+  String? _userRole;
+  String? _userDivision;
 
   @override
   void initState() {
@@ -44,30 +47,33 @@ class _JobListScreenState extends State<JobListScreen>
     await _load();
   }
 
-  // Ambil data user yang sedang login dari storage
   Future<void> _loadUserData() async {
     try {
-      // 1. Cek dulu apakah ada key 'user_data' (biasanya dari login_screen kamu)
       final userStr = await _storage.read(key: 'user_data');
 
       if (userStr != null) {
-        final userData = jsonDecode(userStr);
+        final Map<String, dynamic> userData = jsonDecode(userStr);
+
         setState(() {
-          // Pastikan ambil field 'id'
           _currentUserId = userData['id'];
+          _userRole = userData['role']?.toString();
+
+          // LOGIKA BARU: Cek berdasarkan division_id
+          // Berdasarkan log kamu, CS memiliki id = 2
+          if (userData['division_id'] == 2) {
+            _userDivision = 'Customer Service';
+          } else if (userData['division'] != null) {
+            // Ini untuk jaga-jaga kalau suatu saat Laravel mengirim objek lengkap
+            _userDivision = userData['division']['name']?.toString();
+          }
         });
-        print("DEBUG: Berhasil load ID User -> $_currentUserId");
-      } else {
-        // 2. Jika 'user_data' kosong, coba cek key 'user_id' langsung
-        final userIdStr = await _storage.read(key: 'user_id');
-        if (userIdStr != null) {
-          setState(() {
-            _currentUserId = int.tryParse(userIdStr);
-          });
-        }
+
+        print(
+          "HASIL AKHIR -> ID: $_currentUserId, Role: $_userRole, Divisi: $_userDivision",
+        );
       }
     } catch (e) {
-      print("DEBUG: Gagal load user data -> $e");
+      print("ERROR BACA DATA: $e");
     }
   }
 
@@ -406,6 +412,12 @@ class _JobListScreenState extends State<JobListScreen>
 
   @override
   Widget build(BuildContext context) {
+    // 1. Logika pengecekan yang lebih fleksibel
+    // Kita pastikan pengecekan ini tahan terhadap masalah null atau huruf kecil
+    final bool isCustomerService =
+        _userRole == 'karyawan' &&
+        (_userDivision?.trim() == 'Customer Service' || _userDivision == 'CS');
+
     return Scaffold(
       backgroundColor: _kBg,
       appBar: AppBar(
@@ -422,7 +434,11 @@ class _JobListScreenState extends State<JobListScreen>
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh_rounded)),
+          IconButton(
+            onPressed: _load,
+            icon: const Icon(Icons.refresh_rounded),
+            tooltip: 'Refresh Data',
+          ),
           const SizedBox(width: 8),
         ],
         bottom: PreferredSize(
@@ -451,6 +467,8 @@ class _JobListScreenState extends State<JobListScreen>
       body:
           _loading
               ? const Center(child: CircularProgressIndicator(color: _kPrimary))
+              : _error != null
+              ? _buildErrorState() // Fungsi untuk menampilkan pesan jika API error
               : TabBarView(
                 controller: _tab,
                 children: [
@@ -458,6 +476,62 @@ class _JobListScreenState extends State<JobListScreen>
                   _buildList(_history, true),
                 ],
               ),
+
+      // 2. Tombol Tambah Tugas Khusus CS (Hanya muncul jika kondisi terpenuhi)
+      floatingActionButton:
+          isCustomerService
+              ? FloatingActionButton.extended(
+                onPressed: () async {
+                  // Arahkan ke halaman JobCreateScreen
+                  final refresh = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const JobCreateScreen(),
+                    ),
+                  );
+
+                  // Jika di halaman Create kita panggil Navigator.pop(context, true)
+                  if (refresh == true) {
+                    _load(); // Refresh data agar tugas baru muncul
+                  }
+                },
+                label: const Text(
+                  "Tambah Tugas",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                icon: const Icon(Icons.add_task_rounded, color: Colors.white),
+                backgroundColor: const Color(
+                  0xFF1A237E,
+                ), // Biru gelap identitas Jonusa
+                elevation: 6,
+              )
+              : null,
+    );
+  }
+
+  // Widget tambahan jika terjadi error koneksi
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.cloud_off_rounded,
+            size: 60,
+            color: _kSub.withOpacity(0.5),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            "Gagal memuat data tugas",
+            style: TextStyle(color: _kText, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          ElevatedButton(onPressed: _load, child: const Text("Coba Lagi")),
+        ],
+      ),
     );
   }
 
