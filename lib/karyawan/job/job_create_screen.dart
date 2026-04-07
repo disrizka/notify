@@ -74,6 +74,9 @@ class _JobCreateScreenState extends State<JobCreateScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_technicians.isEmpty && _loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -123,25 +126,22 @@ class _JobCreateScreenState extends State<JobCreateScreen> {
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
               decoration: InputDecoration(
+                labelText: "Pilih Teknisi",
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
                 ),
               ),
               hint: const Text("Pilih Teknisi"),
               value: _selectedTechId,
               items:
-                  _technicians
-                      .map(
-                        (t) => DropdownMenuItem<int>(
+                  _technicians.isEmpty
+                      ? []
+                      : _technicians.map((t) {
+                        return DropdownMenuItem<int>(
                           value: t['id'],
-                          child: Text(t['name'] ?? '-'),
-                        ),
-                      )
-                      .toList(),
+                          child: Text(t['name'] ?? 'Tanpa Nama'),
+                        );
+                      }).toList(),
               onChanged: (v) => setState(() => _selectedTechId = v),
             ),
             const SizedBox(height: 40),

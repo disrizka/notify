@@ -2,9 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:sapa_jonusa/api/api.dart' as Api;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:sapa_jonusa/api/api.dart';
+import 'package:sapa_jonusa/api/api.dart' as Api;
 
 // ── Model ─────────────────────────────────────────────────────────────────────
 
@@ -128,6 +127,7 @@ class JobComment {
 class JobService {
   static const _storage = FlutterSecureStorage();
 
+  // Ini sudah benar, gunakan ini SAJA untuk semua fungsi
   static String get _baseUrl => '${Api.baseUrl}/api';
 
   static Future<String> _token() async {
@@ -227,6 +227,7 @@ class JobService {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return {
         'message': data['message'] ?? '',
+        'completed': data['completed'] ?? false, // tambahkan ini
         'job': Job.fromJson(data['job'] as Map<String, dynamic>),
       };
     }
@@ -239,26 +240,21 @@ class JobService {
   ) async {
     final token = await _storage.read(key: 'auth_token');
 
-    // 1. Pastikan URL menggunakan 'comments' (pakai s) sesuai routes/api.php
-    final url = Uri.parse('$baseUrl/jobs/$jobId/comments');
+    // FIX: pakai _baseUrl bukan baseUrl
+    final url = Uri.parse('$_baseUrl/jobs/$jobId/comments');
 
-    // 2. WAJIB menggunakan http.post
     final response = await http.post(
       url,
       headers: {
         'Authorization': 'Bearer $token',
         'Accept': 'application/json',
-        'Content-Type': 'application/json', // WAJIB ADA INI
+        'Content-Type': 'application/json',
       },
-      body: jsonEncode({
-        'comment':
-            comment, // Key ini harus sama dengan $request->comment di Laravel
-      }),
+      body: jsonEncode({'comment': comment}),
     );
 
-    // Debugging: Lihat apa kata server kalau gagal
-    debugPrint("STATUS: ${response.statusCode}");
-    debugPrint("BODY: ${response.body}");
+    debugPrint("STATUS KOMENTAR: ${response.statusCode}");
+    debugPrint("BODY KOMENTAR: ${response.body}");
 
     if (response.statusCode == 201 || response.statusCode == 200) {
       return jsonDecode(response.body);
@@ -269,14 +265,15 @@ class JobService {
 
   static Future<Job> getJobDetail(int jobId) async {
     final token = await _storage.read(key: 'auth_token');
+
+    // FIX: pakai _baseUrl bukan baseUrl
     final response = await http.get(
-      Uri.parse('$baseUrl/jobs/$jobId'),
+      Uri.parse('$_baseUrl/jobs/$jobId'),
       headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
     );
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      // Jika Laravel membungkus data dalam key 'job', gunakan data['job']
       return Job.fromJson(data['job'] ?? data);
     } else {
       throw Exception('Gagal mengambil data terbaru');
@@ -284,15 +281,29 @@ class JobService {
   }
 
   static Future<List<dynamic>> getTechnicians() async {
-    final token = await _storage.read(key: 'auth_token');
-    final response = await http.get(
-      Uri.parse('$baseUrl/jobs/technicians'), // Sesuai route di api.php
-      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
-    );
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body)['technicians'];
+    try {
+      final token = await _storage.read(key: 'auth_token');
+
+      // FIX: pakai _baseUrl bukan baseUrl
+      final response = await http.get(
+        Uri.parse('$_baseUrl/jobs/technicians'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      debugPrint("STATUS TECHNICIANS: ${response.statusCode}");
+      debugPrint("BODY TECHNICIANS: ${response.body}");
+
+      if (response.statusCode == 200 && response.body.isNotEmpty) {
+        return jsonDecode(response.body);
+      }
+      return [];
+    } catch (e) {
+      debugPrint("Network Error getTechnicians: $e");
+      return [];
     }
-    return [];
   }
 
   static Future<Map<String, dynamic>> createJob({
@@ -301,8 +312,10 @@ class JobService {
     required int technicianId,
   }) async {
     final token = await _storage.read(key: 'auth_token');
+
+    // FIX: pakai _baseUrl bukan baseUrl
     final response = await http.post(
-      Uri.parse('$baseUrl/jobs'), // Sesuai route POST di api.php
+      Uri.parse('$_baseUrl/jobs'),
       headers: {
         'Authorization': 'Bearer $token',
         'Accept': 'application/json',
@@ -314,6 +327,10 @@ class JobService {
         'technician_id': technicianId,
       }),
     );
+
+    debugPrint("STATUS CREATE JOB: ${response.statusCode}");
+    debugPrint("BODY CREATE JOB: ${response.body}");
+
     return jsonDecode(response.body);
   }
 }
