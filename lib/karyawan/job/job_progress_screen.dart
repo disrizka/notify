@@ -6,13 +6,13 @@ import 'package:sapa_jonusa/service/job_service.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-// Palette Warna
 const _kPrimary = Color(0xFF1565C0);
 const _kAccent = Color(0xFF0D47A1);
 const _kBg = Color(0xFFF8FAFC);
 const _kText = Color(0xFF1E293B);
 const _kSub = Color(0xFF64748B);
 const _kGreen = Color(0xFF10B981);
+const _kRed = Color(0xFF10B981);
 
 class JobProgressScreen extends StatefulWidget {
   final Job job;
@@ -35,13 +35,13 @@ class _JobProgressScreenState extends State<JobProgressScreen> {
   bool _uploading = false;
   bool _isLoadingUser = true;
 
-  String _currentUserId = ""; // Simpan sebagai String agar mudah dibanding
+  String _currentUserId = "";
   String _currentUserName = "";
 
   @override
   void initState() {
     super.initState();
-    _job = widget.job; // Gunakan data dari widget sebagai awal
+    _job = widget.job;
     _loadCurrentUser();
   }
 
@@ -176,40 +176,55 @@ class _JobProgressScreenState extends State<JobProgressScreen> {
   }
 
   Future<void> _submitComment() async {
-    if (_commentCtrl.text.trim().isEmpty) return;
-
+    final text = _commentCtrl.text.trim();
+    if (text.isEmpty || _sendingComment) return;
     setState(() => _sendingComment = true);
     try {
-      final res = await JobService.addComment(
-        _job.id,
-        _commentCtrl.text.trim(),
+      // FIX: addComment sekarang return JobComment langsung, bukan Map
+      final newComment = await JobService.addComment(
+        jobId: _job.id,
+        comment: text,
       );
-
-      if (res['success'] == true) {
-        // Panggil refresh agar komentar dari admin di web juga langsung muncul
-        await _refreshJob();
-
-        if (mounted) {
-          setState(() {
-            _commentCtrl.clear();
-            _sendingComment = false;
-          });
-        }
+      if (mounted) {
+        setState(() {
+          _job = Job(
+            id: _job.id,
+            title: _job.title,
+            description: _job.description,
+            status: _job.status,
+            currentStep: _job.currentStep,
+            feedback: _job.feedback,
+            cs: _job.cs,
+            technician: _job.technician,
+            technicianId: _job.technicianId,
+            trackers: _job.trackers,
+            comments: [newComment, ..._job.comments],
+            createdAt: _job.createdAt,
+          );
+          _commentCtrl.clear();
+          _sendingComment = false;
+        });
       }
     } catch (e) {
-      if (mounted) setState(() => _sendingComment = false);
-      debugPrint("Komentar Gagal: $e");
+      if (mounted) {
+        setState(() => _sendingComment = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal kirim komentar: $e'),
+            backgroundColor: _kRed,
+          ),
+        );
+      }
     }
   }
 
   Future<void> _refreshJob() async {
     try {
+      // FIX: gunakan getJobDetail yang sudah ada di service
       final updatedJob = await JobService.getJobDetail(_job.id);
-      if (mounted) {
-        setState(() => _job = updatedJob);
-      }
+      if (mounted) setState(() => _job = updatedJob);
     } catch (e) {
-      debugPrint("Refresh Gagal: $e");
+      debugPrint('Refresh job gagal: $e');
     }
   }
 

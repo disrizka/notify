@@ -12,6 +12,7 @@ import 'package:sapa_jonusa/karyawan/checkin_screen.dart';
 import 'package:sapa_jonusa/karyawan/checkout_screen.dart';
 import 'package:sapa_jonusa/karyawan/cuti_screen.dart';
 import 'package:sapa_jonusa/karyawan/job/job_list_screen.dart';
+import 'package:sapa_jonusa/karyawan/job/job_screen.dart';
 import 'package:sapa_jonusa/karyawan/profile_screen.dart';
 import 'package:sapa_jonusa/karyawan/sakit_screen.dart';
 import "notification_screen.dart";
@@ -1229,81 +1230,139 @@ class _TimeBox extends StatelessWidget {
 }
 
 // ─── Menu Grid ───────────────────────────────────────────────────────────────
-class _MenuGrid extends StatelessWidget {
+class _MenuGrid extends StatefulWidget {
   const _MenuGrid();
 
-  static final _menus = [
-    _MenuDef(
-      icon: Icons.fingerprint,
-      label: 'Kehadiran',
-      bg: Color(0xFFE3F2FD),
-      iconColor: Color(0xFF1565C0),
-      isAbsen: true,
-    ),
-    _MenuDef(
-      icon: Icons.flight_takeoff_rounded,
-      label: 'Izin & Cuti',
-      bg: Color(0xFFFFF8E1),
-      iconColor: Color(0xFFF57C00),
-    ),
-    _MenuDef(
-      icon: Icons.account_balance_wallet_rounded,
-      label: 'Gaji',
-      bg: Color(0xFFE8F5E9),
-      iconColor: Color(0xFF2E7D32),
-    ),
-    _MenuDef(
-      icon: Icons.calendar_month_rounded,
-      label: 'Kalender',
-      bg: Color(0xFFF3E5F5),
-      iconColor: Color(0xFF7B1FA2),
-    ),
-    _MenuDef(
-      icon: Icons.business_rounded,
-      label: 'Perusahaan',
-      bg: Color(0xFFE3F2FD),
-      iconColor: Color(0xFF0277BD),
-    ),
-    _MenuDef(
-      icon: Icons.check_circle_outline_rounded,
-      label: 'Approval',
-      bg: Color(0xFFE8F5E9),
-      iconColor: Color(0xFF00695C),
-    ),
-    _MenuDef(
-      icon: Icons.groups_rounded,
-      label: 'Tim',
-      bg: Color(0xFFE0F2F1),
-      iconColor: Color(0xFF00796B),
-    ),
-    _MenuDef(
-      icon: Icons.receipt_long_rounded,
-      label: 'Kasbon',
-      bg: Color(0xFFFFF3E0),
-      iconColor: Color(0xFFE65100),
-    ),
-    _MenuDef(
-      icon: Icons.chat,
-      label: 'Chat',
-      bg: Color.fromARGB(255, 221, 255, 249),
-      iconColor: Color.fromARGB(255, 0, 100, 100),
-      route: ChatScreen(),
-    ),
-    _MenuDef(
-      icon: Icons.task_alt_rounded,
-      label: 'Tracker tugas',
-      bg: Color(0xFFE8F5E9),
-      iconColor: Color(0xFF1B5E20),
-      route: JobListScreen(),
-    ),
-    _MenuDef(
-      icon: Icons.history_rounded,
-      label: 'Riwayat',
-      bg: Color(0xFFE8EAF6),
-      iconColor: Color(0xFF3949AB),
-      route: AttendanceHistoryScreen(),
-    ),
-  ];
+  @override
+  State<_MenuGrid> createState() => _MenuGridState();
+}
+
+class _MenuGridState extends State<_MenuGrid> {
+  final _storage = const FlutterSecureStorage();
+  String _userRole = '';
+  String _userDivision = '';
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUser();
+  }
+
+  Future<void> _loadUser() async {
+    try {
+      final userStr = await _storage.read(key: 'user_data');
+      if (userStr != null) {
+        final data = jsonDecode(userStr) as Map<String, dynamic>;
+        final div = data['division'];
+        setState(() {
+          _userRole = (data['role'] as String? ?? '').toLowerCase();
+          _userDivision =
+              (div is Map ? div['name'] as String? : div as String?) ?? '';
+          _loaded = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('_MenuGrid _loadUser error: $e');
+      setState(() => _loaded = true);
+    }
+  }
+
+  // CS = role karyawan + divisi Customer Service
+  // Kepala = role kepala
+  bool get _canCreateJob =>
+      _userRole == 'kepala' ||
+      _userDivision.toLowerCase().contains('customer service');
+
+  List<_MenuDef> get _menus {
+    final base = [
+      const _MenuDef(
+        icon: Icons.fingerprint,
+        label: 'Kehadiran',
+        bg: Color(0xFFE3F2FD),
+        iconColor: Color(0xFF1565C0),
+        isAbsen: true,
+      ),
+      const _MenuDef(
+        icon: Icons.flight_takeoff_rounded,
+        label: 'Izin & Cuti',
+        bg: Color(0xFFFFF8E1),
+        iconColor: Color(0xFFF57C00),
+      ),
+      const _MenuDef(
+        icon: Icons.account_balance_wallet_rounded,
+        label: 'Gaji',
+        bg: Color(0xFFE8F5E9),
+        iconColor: Color(0xFF2E7D32),
+      ),
+      const _MenuDef(
+        icon: Icons.calendar_month_rounded,
+        label: 'Kalender',
+        bg: Color(0xFFF3E5F5),
+        iconColor: Color(0xFF7B1FA2),
+      ),
+      const _MenuDef(
+        icon: Icons.business_rounded,
+        label: 'Perusahaan',
+        bg: Color(0xFFE3F2FD),
+        iconColor: Color(0xFF0277BD),
+      ),
+      const _MenuDef(
+        icon: Icons.check_circle_outline_rounded,
+        label: 'Approval',
+        bg: Color(0xFFE8F5E9),
+        iconColor: Color(0xFF00695C),
+      ),
+      const _MenuDef(
+        icon: Icons.groups_rounded,
+        label: 'Tim',
+        bg: Color(0xFFE0F2F1),
+        iconColor: Color(0xFF00796B),
+      ),
+      const _MenuDef(
+        icon: Icons.receipt_long_rounded,
+        label: 'Kasbon',
+        bg: Color(0xFFFFF3E0),
+        iconColor: Color(0xFFE65100),
+      ),
+      _MenuDef(
+        icon: Icons.chat,
+        label: 'Chat',
+        bg: const Color.fromARGB(255, 221, 255, 249),
+        iconColor: const Color.fromARGB(255, 0, 100, 100),
+        route: ChatScreen(),
+      ),
+      _MenuDef(
+        icon: Icons.task_alt_rounded,
+        label: 'Tracker Tugas',
+        bg: const Color(0xFFE8F5E9),
+        iconColor: const Color(0xFF1B5E20),
+        route: JobListScreen(),
+      ),
+      _MenuDef(
+        icon: Icons.history_rounded,
+        label: 'Riwayat',
+        bg: const Color(0xFFE8EAF6),
+        iconColor: const Color(0xFF3949AB),
+        route: AttendanceHistoryScreen(),
+      ),
+    ];
+
+    // Tambahkan menu "Buat Tugas" hanya untuk CS & Kepala
+    if (_canCreateJob) {
+      base.add(
+        _MenuDef(
+          icon: Icons.add_task_rounded,
+          label: 'Buat Tugas',
+          bg: const Color(0xFFE8EAF6),
+          iconColor: const Color(0xFF1565C0),
+          route: const CsCreateJobScreen(),
+        ),
+      );
+    }
+
+    return base;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1334,18 +1393,32 @@ class _MenuGrid extends StatelessWidget {
               ),
             ),
           ),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
-              mainAxisSpacing: 14,
-              crossAxisSpacing: 8,
-              childAspectRatio: 0.82,
+
+          // Tampilkan shimmer saat loading user data
+          if (!_loaded)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: CircularProgressIndicator(
+                  color: _kPrimary,
+                  strokeWidth: 2,
+                ),
+              ),
+            )
+          else
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                mainAxisSpacing: 14,
+                crossAxisSpacing: 8,
+                childAspectRatio: 0.82,
+              ),
+              itemCount: _menus.length,
+              itemBuilder: (_, i) => _MenuGridItem(menu: _menus[i]),
             ),
-            itemCount: _menus.length,
-            itemBuilder: (_, i) => _MenuGridItem(menu: _menus[i]),
-          ),
+
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,

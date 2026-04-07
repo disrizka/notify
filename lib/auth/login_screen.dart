@@ -73,7 +73,6 @@ class _LoginScreenState extends State<LoginScreen>
 
   Future<void> _login() async {
     final navigator = Navigator.of(context);
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
       _showError('Email dan password tidak boleh kosong.');
@@ -93,24 +92,37 @@ class _LoginScreenState extends State<LoginScreen>
           )
           .timeout(const Duration(seconds: 10));
 
-      final data = json.decode(response.body);
+      final data = json.decode(response.body) as Map<String, dynamic>;
 
-      // Cari bagian ini di fungsi _login() kamu
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
+        // ── Simpan token ────────────────────────────────────────────
+        await _storage.write(
+          key: 'auth_token',
+          value: data['access_token'] as String,
+        );
 
-        // SESUDAH — tambahkan simpan role:
-        await _storage.write(key: 'auth_token', value: data['access_token']);
+        // ── Simpan user_id sebagai string ───────────────────────────
         await _storage.write(
           key: 'user_id',
           value: data['user']['id'].toString(),
         );
+
+        // ── Simpan role ─────────────────────────────────────────────
         await _storage.write(
           key: 'user_role',
           value: data['user']['role'].toString(),
-        ); // ← tambahan ini
+        );
 
-        final role = data['user']['role'].toString().trim().toLowerCase();
+        // ── FIX: Simpan seluruh data user sebagai JSON string ───────
+        // Dibutuhkan oleh job_list_screen.dart, job_screen.dart, dll
+        await _storage.write(
+          key: 'user_data',
+          value: json.encode(data['user']),
+        );
+
+        debugPrint('DEBUG USER LOGIN: ${json.encode(data['user'])}');
+
+        final role = (data['user']['role'] as String).trim().toLowerCase();
 
         if (role == 'admin' || role == 'kepala') {
           navigator.pushReplacement(
@@ -125,7 +137,8 @@ class _LoginScreenState extends State<LoginScreen>
         }
       } else {
         _showError(
-          data['message'] ?? 'Login gagal. Periksa kembali data Anda.',
+          data['message'] as String? ??
+              'Login gagal. Periksa kembali data Anda.',
         );
       }
     } catch (_) {
